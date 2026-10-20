@@ -2,6 +2,8 @@
 
 > *Caesar over the Rhine in ten days, with timber and nerve. This bridge went up in one night.*
 
+**The receipts:** `caesarRUBICON.json` is the complete session export of the night this bridge was built — the research, the build, the failed review, the repair, the re-review, and one agent's spiral — token-shaped strings and personal identifiers redacted, everything else unedited.
+
 A local **stdio MCP server** that lets Caesar (Hermes profile `caesar`) delegate bounded tasks to
 independently installed agent CLIs: Claude Code, Codex and OMP. Each one runs its own agent loop.
 It has five tools: `list_agents`, `start_task`, `get_task`, `cancel_task` and `doctor`.
