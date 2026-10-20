@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": 1,
+      "url": "https://hermes-agent.nousresearch.com/docs/llms.txt",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 2,
+      "url": "https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 3,
+      "url": "https://hermes-agent.nousresearch.com/docs/developer-guide/programmatic-integration",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 4,
+      "url": "https://hermes-agent.nousresearch.com/docs/user-guide/messaging/a2a",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 5,
+      "url": "https://hermes-agent.nousresearch.com/docs/user-guide/bot-mode",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 6,
+      "url": "https://modelcontextprotocol.io/specification/2026-07-28/basic/transports",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 7,
+      "url": "https://developers.openai.com/codex/noninteractive",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 8,
+      "url": "https://code.claude.com/docs/en/headless",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 9,
+      "url": "https://agentclientprotocol.com/overview/introduction",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 10,
+      "url": "https://gofastmcp.com/getting-started/quickstart",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 11,
+      "url": "https://modelcontextprotocol.io/specification/2026-07-28",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 12,
+      "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 13,
+      "url": "https://github.com/openai/codex",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 14,
+      "url": "https://developers.openai.com/learn/docs-mcp",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 15,
+      "url": "https://registry.npmjs.org/@modelcontextprotocol/sdk/latest",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 16,
+      "url": "https://registry.npmjs.org/@modelcontextprotocol/server/latest",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 17,
+      "url": "https://pypi.org/pypi/fastmcp/json",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 18,
+      "url": "https://py.sdk.modelcontextprotocol.io/v2/server/quickstart",
+      "title": "",
+      "accessed": "2026-10-20"
+    },
+    {
+      "id": 19,
+      "url": "https://py.sdk.modelcontextprotocol.io/v2/migration",
+      "title": "",
+      "accessed": "2026-10-20"
+    }
+  ]
+}
