@@ -284,3 +284,11 @@ Round 1: VERDICT: FAIL. Ten findings: [blocker] write jobs could edit the regist
 Round 2 (after fixes, each with a test written first): VERDICT: PASS. All ten fixed. Remaining nits: the launcher's token file is not location-checked like the registry (documented in Amendment A4: it belongs outside every root); the registry-location check runs after authentication (harmless).
 
 Evidence: `.venv/bin/python -m pytest -q -p no:cacheprovider` → 172 passed, 2 skipped (the same two skips as the clean baseline: no bridge.local.toml in the copy, live smoke not requested). The 90 pre-existing tests pass with their files byte-identical (sha256 checked before and after).
+
+## Client slot (scripts/spqr-v2, slot.py, CLIENTS.md), 2026-10-21
+
+Independent Sonnet review, round 1: **VERDICT: PASS**, no blockers or should-fix. Seven nits. Fixed:
+newline in slot name (case pattern), missing-.venv message, doc wording (registry outside
+allowed_roots, no symlinks, how to re-issue). Left: comma in --roots paths, non-BMP chars in
+json.dumps, pre-existing DIR mode not checked, Claude Code/Codex/OMP command syntax not verified
+on a machine with those clients.
