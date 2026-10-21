@@ -25,6 +25,10 @@ The product, in the operator's words: *"I tell an agent a task and it has the ab
 
 Borrowed from StarNet, adapted to the rules above: **Task Briefs** (a job that hits a real fork pauses and asks one concrete question with options instead of guessing), **OUTBOX** (deliverables land as real files), a **usage ledger** shown as-is — accounting, not a governor — and the **provable-state law**: the bridge reports only job state it can back with a signal. StarNet's per-job budget caps were considered and rejected; usage is the ceiling here.
 
+- **Customization is core scope.** Agents: appearance, clothing, name, role, model, instructions, skills, permitted tools. World: room layouts, furnishings, cultural themes, team assignments.
+- **Savable workflows.** Named, reusable sequences of tasks, agent assignments, handoffs, review steps, and completion criteria — duplicate, edit, reuse with different inputs; manual or scheduled starts; unattended limits and input points set per workflow. Editing creates a new version; every run keeps its own brief, history, memory references, and deliverables. Workflows are saved *orders*, issued through the bridge when run — not boards. Kanban means no one is delegating.
+- **The Library staple.** Every order — every task brief and handoff — carries the standing order: **"Remember to read and write in the Library."** Read the relevant entries before acting; record findings, decisions, and results afterward; link what you read and wrote in the completion report. Enforced by the machinery, not politeness: the bridge stamps it onto every brief and handoff at issue time, completion requires cited Library reads and writes, and memory activity is audited and visible.
+
 ## Quickstart
 ```sh
 cd "/home/jimmy/Projects (jimmy's)/SPQR"
