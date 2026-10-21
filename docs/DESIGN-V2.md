@@ -1,6 +1,6 @@
 # SPQR v2 — principal-based bridge design
 
-Status: Phase 0 proposal, revision 2, 2026-10-20. Jimmy appointed Codex and subagents
+Status: Phase 0 proposal, revision 2, 2026-10-20; Amendment A (Decisions 4–6) 2026-10-21. Jimmy appointed Codex and subagents
 with differing perspectives for this review round. Jimmy approves the design
 before implementation. Round 4 independent design/baseline reviews pass; no implementation gate has passed. No production cutover is authorized.
 
@@ -8,9 +8,108 @@ before implementation. Round 4 independent design/baseline reviews pass; no impl
 
 Implement R1–R5 from Jimmy's commission: authenticated named principals, an operator-owned
 revocable registry, one job-owning daemon, tailnet-only MCP access, and principal-scoped
-ownership, policy, budgets and audit. Names such as caesar and iggy are examples, not role
+ownership, policy and audit. Names such as caesar and iggy are examples, not role
 checks or grants. Jimmy alone chooses principals, permissions, caps, enabled agents and cutover.
 Codex and OMP remain disabled. Existing source/tests and the live gateway stay intact.
+
+## Amendment A — Jimmy's Decisions 4–6 (2026-10-21, revision 2 after independent review)
+
+Source: docs/DECISIONS-V2-JIMMY.md. Where this amendment and older text below disagree,
+this amendment wins; contradicting lines below are tagged "[superseded by Amendment A…]".
+
+A1. Scope is per job, set by Jimmy when he gives the task (Decision 4).
+- The registry carries identity only: principal ID, enabled flag, credential hashes, allowed
+  transports, expiry, and outer ceilings (agents, workspace roots, write allowed at all).
+  It carries no standing scope.
+- Jimmy issues scope as a **grant**: an entry in the operator registry (`[grants.<id>]`)
+  for exactly one principal, with access (read_only or write), agents, workspace roots,
+  max_rounds (default 5) and mandatory issued_at and expires_at. The whole registry fails
+  closed if either time is missing, issued_at is in the future, or expires_at - issued_at
+  is over 24 hours. No MCP tool can
+  create, widen or list grants. Jimmy tells the agent "use grant <id>"; the agent passes
+  `grant_id` to start_task. Accepted reading: one grant covers one piece of work, which
+  may take several rounds (A3), so it is short-lived and bounded rather than standing.
+- Effective scope = grant ∩ principal ceiling ∩ global agent policy. A grant can never
+  enable a disabled agent, add a root outside allowed_roots, or allow write where the
+  agent or principal ceiling forbids it. A grant issued to A is refused for B with the
+  same generic error as a missing or expired grant.
+- The grant is re-checked at admission and again just before the queued job launches;
+  a grant removed or expired in between fails the job before any process starts. The
+  job row records grant_id and the resolved scope, so later registry edits cannot widen it.
+- No grant_id means minimum scope: read_only, the principal's ceiling agents and roots,
+  the default timeout. Silence is never a broad grant.
+- Sub-delegation "no broader than its parent" has no mechanism yet and is vacuous in
+  Phase 1, because depth stays 1 (bridge-launched agents cannot start bridge tasks).
+  Any depth above 1 waits for the recursion gate and then becomes a grant field.
+
+A2. The limit is usage; no money layer (Decision 5).
+- No budget accounts, ledgers, reservations, settlement, currency or periods, and no
+  dollar caps. The v2 entry point clears every agent's max_budget_usd at startup, so v2
+  never passes --max-budget-usd (tested). v1 stays as it is until cutover.
+- When an agent reports it ran out of usage, the job ends in terminal state
+  `usage_exhausted`. Hard stop: never retried, no paid/per-token fallback, no switching
+  agent or provider.
+- The stop is recorded per agent and refuses new starts of that agent for every principal
+  (`usage_stopped`) until Jimmy clears it with one registry line, `[usage_cleared]
+  <agent> = <UTC time>`, which clears stops whose recorded UTC time is before it. A clear
+  time in the future is rejected (it would pre-clear future stops). The bridge reports;
+  it does not ration or guess when the window resets.
+- Detection only looks at backend-reported failures (nonzero exit, Claude error envelope,
+  Codex error event, stderr), never at a successful answer, using phrases listed in
+  adapters.py. A model or injected text can still make a failing run look like a usage
+  stop; the cost is one stopped agent that Jimmy clears. Unrecognised exhaustion stays
+  `failed` and falls under A3. Unrelated: adapters' USAGE_KEYS are token counts.
+
+A3. Loop guardrails (Decision 6). A **lineage** is the work being looped on: the grant,
+or without a grant, the same principal + agent + workspace within a rolling 60 minutes.
+- Failure cap: **3**. After 3 consecutive non-success outcomes (failed, timed_out) in a
+  lineage, further starts are refused with `retry_cap_reached`; editing the task text does
+  not reset it. A success resets it. 3 is Jimmy's standing "stuck after 3 tries, stop".
+- Progress cap: **5** by default, grant max_rounds may set 5–10. Without a grant it is 5
+  per lineage. Exceeding it is refused with `round_cap_reached`. Only admitted jobs count;
+  idempotent replays and refused starts do not.
+- No-progress tripwire: if the last two finished jobs in a lineage ended with the same state
+  and the same digest of result/error text, the next start is refused with `no_progress`.
+  Best effort: nondeterministic output (timestamps) can defeat it; the caps still hold.
+- Plainly: without a grant the bound is 3 failures and 5 rounds per principal, agent and
+  workspace per hour; a principal with many ceiling roots multiplies it. A per-principal
+  hourly ceiling can be added later if that matters.
+- Admission is synchronous inside the single event loop (no await between the checks and
+  the job insert), so concurrent starts cannot overrun a cap (tested with simultaneous
+  starts). The failure cap and the tripwire share one lineage query.
+- Agent-internal turn limits (e.g. Claude --max-turns) are unchanged and separate.
+
+A4. Phase 1 simplifications chosen by the builder (keep it uncomplicated).
+- Credentials: tokens are at least 32 random bytes (`secrets.token_urlsafe(32)`). The
+  registry stores only their sha256; no salt or KDF is needed at that entropy. The server
+  needs no SecretResolver; only the launcher holds the token. Digests are compared with
+  hmac.compare_digest and never logged.
+- v2 runs as its own entry point (`python -m spqr_bridge.v2 --config C --registry R
+  --credential-fd N`), normally started by `python -m spqr_bridge.launch --token-file F`,
+  which refuses a token file that is not owner-only. No anonymous mode. The v1 entry point
+  and its tests stay unchanged as the production binding until Jimmy orders cutover; at
+  cutover v1 is retired, not kept as a fallback. v2 has no doctor tool in Phase 1.
+- Ownership: new nullable columns on jobs (principal_id, grant_id, scope_json); v2
+  idempotency lives in idempotency_receipts UNIQUE(principal_id, key), which survive job
+  pruning (a pruned replay returns the task ID with state `result_expired`). Legacy rows
+  (principal_id NULL) are invisible to every principal.
+- Audit (Phase 1 minimum): append-only audit_events rows with allowlisted fields only
+  (time, principal, tool, task/grant/agent IDs, outcome code). Authentication failures go
+  to an append-only line file in state_dir, because opening the job store for an
+  unauthenticated caller would run crash recovery on its behalf. That file holds only time
+  and reason code and stops growing at 1 MB.
+- Registry placement: the registry must live outside every allowed root (v2 refuses to
+  start otherwise) and no workspace may contain it, so a write job cannot rewrite its own
+  scope. Same-user workers are still not OS-confined (see Recursion section); this closes
+  the obvious path, not every path. The launcher's token file belongs outside roots too.
+- Durability: usage stops are their own table (usage_stops), so pruning jobs never lifts one;
+  pruning keeps v2 rows younger than 24 hours so the A3 caps cannot be reset by volume.
+- The `usage_exhausted` state is produced only by the v2 entry point; v1 keeps reporting
+  `failed` until cutover.
+- Revocation in Phase 1: the registry is re-read on every call and before launch; a
+  disabled, expired or removed principal gets a generic auth error and cannot read results.
+  An unreadable or invalid registry fails closed. Stopping already-running jobs waits for
+  Jimmy's revocation ruling (still open).
 
 ## Observed starting point
 
@@ -34,7 +133,7 @@ revalidate on every request. No anonymous discovery or health detail endpoint.
 
 A separate git-ignored operator registry specifies stable principal IDs, enabled status,
 credential references and expiry, permitted transports, agent allowlists, access modes,
-workspace roots, time/turn limits and budget policy. Ship only a nonfunctional example.
+workspace roots, time/turn limits and budget policy. Ship only a nonfunctional example.  [superseded by Amendment A1: registry holds identity and ceilings only; scope is per-job grants]
 No tool provisions principals, writes the registry, grants access or raises caps.
 Principal IDs must not be reused for different people/agents: historical ownership survives revocation.
 
@@ -55,7 +154,7 @@ Polling interval and cancellation latency must be measured and documented before
 ## Phase 1 authentication contract
 
 Phase 1 remains standalone stdio in isolated state, with no HTTP or IPC listener. A trusted
-launcher obtains the credential through a SecretResolver interface and supplies it via a
+launcher obtains the credential through a SecretResolver interface and supplies it via a  [superseded by Amendment A4: registry stores token hashes; no SecretResolver]
 single-use inherited anonymous pipe FD; only the FD number travels in argv. The server reads
 a bounded credential envelope (maximum 4096 bytes, deadline 2 seconds), closes the FD, verifies
 the credential and its `stdio` scope against the current registry, and creates AuthContext
@@ -64,10 +163,8 @@ fail generically, with an unauthenticated audit receipt and no service. No `--pr
 no anonymous backward-compatibility mode. Do not accept a named disk path as a credential FD;
 validate pipe type and close-on-exec after receipt. No worker inherits it.
 
-SecretResolver has a narrow resolve(reference) -> secret-bytes contract; errors expose only safe
-codes. Phase 1 uses fixture-only in-memory/test-launcher implementations, never a fake production
-resolver selected implicitly. Production resolver choice is builder research, not a prerequisite
-to fixture work. Existing v1 production remains on its unchanged code/binding. Phase 2's stdio
+[SecretResolver paragraph superseded by Amendment A4: the registry stores token hashes and only
+the launcher holds the token.] Existing v1 production remains on its unchanged code/binding. Phase 2's stdio
 forwarder uses the same bootstrap and authenticates to daemon IPC; it never owns a Store.
 
 Bearer matrix semantics: a valid B token on a new channel authenticates B, not A. A B token
@@ -92,7 +189,7 @@ Both ingresses share the same authorization/dispatcher and Supervisor. Private I
 identity by itself: credential verification is still mandatory. HTTP credentials cannot use IPC.
 No token in argv, URLs, MCP payloads, prompts, diagnostics or environment passthrough.
 
-Registry holds secret references, not plaintext tokens. Secret-store selection is unresolved;
+Registry holds secret references, not plaintext tokens. Secret-store selection is unresolved;  [superseded by Amendment A4: registry stores token hashes; no SecretResolver]
 inspect and propose an existing operator mechanism before implementing retrieval. No new
 credential is created or distributed without Jimmy's direction. A file fallback, if approved,
 must be outside worker-readable areas, git-ignored, owner-only, and never published.
@@ -159,28 +256,22 @@ no bearer scheme can distinguish a copied credential from its rightful holder.
 Schema migration belongs to Phase 1, under the existing lock; Phase 2 only adds transport and
 service lifecycle. Proposed tables: jobs(principal_id nullable only for legacy rows, task_id,
 policy_revision, existing metadata); idempotency_receipts(principal_id, key, request_hash,
-task_id, created_at), unique(principal_id,key); budget_accounts(principal_id, period_id, cap_units);
-budget_entries(entry_id, principal_id, period_id, task_id, reserved_units, settled_units,
-status); audit_events(sequence, request_id, safe structured fields); audit_outbox(sequence,
-export_status). Currency scale and periods are explicit config/schema values. Foreign/missing
+task_id, created_at), unique(principal_id,key); [budget tables removed by Amendment A]; audit_events(sequence, request_id, safe structured fields); audit_outbox(sequence,
+export_status). Foreign/missing
 ownership checks precede every query response. No caller-controlled SQL identifiers.
 
-One BEGIN IMMEDIATE transaction checks idempotency, global pending bound, current policy and
-available funds, inserts the job, reserves its entire cap, and appends the admission audit/outbox.
-No process launches before commit. Duplicate matching receipt returns the same task reference
-without spending; a mismatched request hash fails. Completion settles budget and terminal job
-plus audit atomically; failed settlement leaves the reservation held and execution disabled as
-necessary rather than pretending the ledger is reconciled. Crash recovery retains unknown-cost
-holds and records interrupted jobs in one recovery transaction before enabling admission.
+Admission checks idempotency, the global pending bound, current policy and the A3 caps, inserts
+the job and appends the admission audit, with no await in between (Amendment A3). No process
+launches before the insert. A duplicate matching receipt returns the same task reference; a
+mismatched request hash fails. Crash recovery records interrupted jobs before enabling admission.
 
 Idempotency receipts are durable tombstones, independent of job/result pruning, principal
-revocation, restart and accounting-period rollover. Keys never expire or become reusable
+revocation and restart. Keys never expire or become reusable
 implicitly. A replay whose result was pruned returns the original task ID and result_expired,
-without execution/reservation. Explicit administrative archival must preserve key non-reuse;
-no automatic deletion in v2. Planned test: prune original job, replay key across restart/period
-rollover, assert zero new executions and reservations.
+without execution. Explicit administrative archival must preserve key non-reuse;
+no automatic deletion in v2. Planned test: prune original job, replay key, assert zero new executions.
 
-## Ownership, permissions and budgets
+## Ownership and permissions
 
 All get/wait/cancel/idempotency lookup paths filter principal ownership before returning any
 metadata or registering a waiter. Foreign and missing IDs return the same bounded error.
@@ -190,28 +281,19 @@ principal policy; no principal override can enable a disabled agent or grant glo
 Keep global concurrency=2, pending=8 and FIFO reader/writer lease. Preserve workspace pinning,
 environment allowlist, output caps and single runner cancellation semantics.
 
-Use integer monetary units, with explicit rounding upward. Require Jimmy to set per-job maximum,
-aggregate cap and accounting period before granting spend. Reserve the full enforceable maximum
-atomically with job creation; concurrent admissions cannot oversubscribe. Release unused funds
-only from validated final cost. Missing/invalid cost, crash, interrupted job or uncertain provider
-billing retains the full reservation pending operator reconciliation. A persistent ledger survives
-job pruning, restart, principal removal and policy changes. Replay returns no new reservation.
-Recheck policy and reservation before spawn. Never launch an adapter without a verified hard
-maximum. Claude's CLI cap is not evidence of a strict provider billing ceiling: prove its actual
-semantics before claiming the commission's before-spend guarantee; otherwise report a blocked
-gate. No truncation-after-spend substitute. No live spend without approved principal caps.
+[Money paragraph removed by Amendment A2: no budgets, reservations or dollar caps.]
 
 ## Audit and failure behavior
 
 Write structured append-only receipts for authentication, protocol validation, each tool call,
 admission, spawn, terminal outcome, policy changes and crash recovery. Fields: sequence/request
 ID, UTC timestamp, principal or unauthenticated, safe tool enum, validated job/agent IDs or null,
-policy revision, safe outcome code, reservation and actual cost or unknown. Foreign-job attempts
+policy revision, safe outcome code. Foreign-job attempts
 must not disclose target ownership. No raw headers, tokens, fingerprints, prompts, responses,
 paths or arbitrary exception strings. Redaction alone is insufficient: allowlist fields.
 A token embedded in a malformed ID must never be logged. Audit denied calls too.
 
-Persist admission/reservation/audit atomically in SQLite, and use a durable audit outbox for
+Persist admission/audit together in SQLite, and use a durable audit outbox for
 exported receipts. Audit storage failure prevents new execution; cleanup still runs and records
 terminal state when possible. Bound transport abuse with rate/size limits and explicit overflow
 receipts; no silent claim that every request was recorded if disk failure prevented it.
@@ -221,7 +303,7 @@ Jimmy's chosen source before asserting equivalent compliance; no such schema was
 ## Phases and evidence gates
 
 0. Jimmy assigns reviewers and approves this design, including unresolved choices below.
-1. Write new auth/ownership/transport-scope/expiry/reload/idempotency/budget tests RED first;
+1. Write new auth/ownership/transport-scope/expiry/reload/idempotency/scope/usage-stop/loop-cap tests RED first;
    implement stdio authentication in isolated state. Preserve all existing 91 tests unchanged.
    Jimmy-selected independent non-author adversarial review; preserve verdict verbatim in
    docs/REVIEW-V2.md. Failed verdict stops progression; repair tests-first, then re-review.
@@ -232,8 +314,8 @@ Jimmy's chosen source before asserting equivalent compliance; no such schema was
 3. Document repeatable generic Hermes profile binding and tailnet client contract. Jimmy and
    iggy build iggy's client separately. No implicit authorization through a profile/role name.
 4. Run full policy/audit/revocation drills, hostile paths (symlink swap, rename, dot-dot), all
-   principal recursion attempts, fuzz bounds, budget races, and real bounded delegations for
-   Caesar via Hermes and iggy via tailnet. Record job IDs and verified cost, never tokens.
+   principal recursion attempts, fuzz bounds, admission races, and real bounded delegations for
+   Caesar via Hermes and iggy via tailnet. Record job IDs, never tokens.
    Final independent non-author review chosen by Jimmy; all verdicts retained unedited.
 
 Every claim needs a command/test/job receipt. No live verification or review passage is claimed
@@ -256,13 +338,13 @@ Jimmy-reserved: actual principals, grants, write capability, cap numbers, agent 
 ownership assignment, production installation and cutover. No real credential issuance or live
 spend is authorized by this draft. Jimmy's reviewer selection is resolved for this round.
 
-Builder work: inspect existing secret storage and tailnet configuration read-only, choose and
-justify resolver/TLS/worker confinement mechanisms, locate Rubicon receipts, and prove service
+Builder work: inspect tailnet configuration read-only, choose and
+justify TLS/worker confinement mechanisms, locate Rubicon receipts, and prove service
 launch/cleanup compatibility. These engineering investigations do not require Jimmy to choose
 the implementation. Proposed revoke-and-stop behavior is the conservative default for review;
 measure propagation before rollout and surface any product-policy question to Jimmy.
 
-No choice here authorizes a principal, a write grant, a budget increase, a disabled adapter,
+No choice here authorizes a principal, a write grant, a disabled adapter,
 production service change, deployment or push. Design approval remains pending. Phase 1
 cannot begin until the recorded baseline failures are diagnosed and review blockers cleared.
 

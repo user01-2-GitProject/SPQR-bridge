@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -208,6 +209,20 @@ def _parse_omp(out: bytes) -> ParseResult:
     if raw:
         return ParseResult(True, raw, None)
     return ParseResult(False, "", "malformed_output: empty output")
+
+
+# Phrases backends use when an account's usage window/quota is spent. Matched only on runs the
+# backend itself reported as failed, never on a successful answer. Best effort: unrecognised
+# exhaustion stays `failed`. (Unrelated to USAGE_KEYS above, which are token counts.)
+USAGE_EXHAUSTED = re.compile(
+    r"usage limit|hit your (?:usage )?limit|usage_limit_reached|out of (?:extra )?usage|"
+    r"quota (?:exceeded|exhausted)|insufficient_quota|weekly limit", re.IGNORECASE)
+
+
+def is_usage_exhausted(pr: "ParseResult", stderr_tail: str | None) -> bool:
+    if pr.ok:
+        return False
+    return any(USAGE_EXHAUSTED.search(t) for t in (pr.error, pr.text, stderr_tail) if t)
 
 
 def parse_output(adapter: str, out: bytes, returncode: int) -> ParseResult:

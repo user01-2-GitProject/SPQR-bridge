@@ -19,8 +19,9 @@ import shutil
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
-from .adapters import Invocation, build_invocation, parse_output
+from .adapters import Invocation, build_invocation, is_usage_exhausted, parse_output
 from .config import AgentConfig, BridgeConfig
 from .envpolicy import MAX_DEPTH, build_env, current_depth, scrub
 from .paths import PathPolicyError, PinnedDir, check_pinned, pin_workspace
@@ -38,6 +39,14 @@ class BridgeError(Exception):
     def __init__(self, code: str, message: str):
         super().__init__(f"{code}: {message}")
         self.code = code
+
+
+class Replay(Exception):
+    """Raised by a v2 admission hook: an idempotent replay, answered without a new job."""
+
+    def __init__(self, view: dict):
+        super().__init__("replay")
+        self.view = view
 
 
 class _Lease:
@@ -101,6 +110,7 @@ class _Job:
     stop: asyncio.Event = field(default_factory=asyncio.Event)
     reason: str | None = None
     runner: asyncio.Task | None = None
+    prelaunch: Callable[[], None] | None = None  # v2: re-checks scope; raises BridgeError to refuse launch
 
     def request_stop(self, reason: str) -> None:
         if self.reason is None:
@@ -154,6 +164,7 @@ class Supervisor:
         self._jobs: dict[str, _Job] = {}  # active jobs only; removed by the runner after terminal persistence
         self._closed = False
         self.failed: str | None = None
+        self.classify_usage = False  # v2 only: report usage_exhausted; v1 keeps `failed` until cutover
 
     # ---- admission -----------------------------------------------------
     def _agent(self, agent_id: str) -> AgentConfig:
@@ -168,7 +179,10 @@ class Supervisor:
 
     async def start(self, agent_id: str, task: str, context: str | None, workspace: str,
                     access: str = "read_only", timeout_seconds: int | None = None,
-                    idempotency_key: str | None = None) -> dict:
+                    idempotency_key: str | None = None, admit: Callable[[str, str], dict] | None = None,
+                    prelaunch: Callable[[], None] | None = None) -> dict:
+        """`admit(request_hash, pinned_workspace)` is the v2 admission hook: it raises BridgeError or
+        Replay, or returns ownership columns for the job row. It runs with no await before the insert."""
         if self._closed:
             raise BridgeError("shutting_down", "bridge is shutting down")
         if self.failed:
@@ -202,6 +216,7 @@ class Supervisor:
                 raise BridgeError("access_denied", str(e)) from None
             req_hash = hashlib.sha256(
                 json.dumps([agent_id, task, context, str(ws), access, timeout]).encode()).hexdigest()
+            owner = admit(req_hash, str(ws)) if admit is not None else {}
             if idempotency_key is not None:
                 prior = self.store.find_idempotent(idempotency_key)
                 if prior:
@@ -212,9 +227,9 @@ class Supervisor:
                 raise BridgeError("queue_full", f"at most {self.s.max_pending} pending+active tasks")
             tid = "t_" + secrets.token_hex(8)
             self.store.create(dict(task_id=tid, agent_id=agent_id, access=access, workspace=str(ws),
-                                   timeout_s=timeout, idem_key=idempotency_key, request_hash=req_hash))
+                                   timeout_s=timeout, idem_key=idempotency_key, request_hash=req_hash, **owner))
             self.store.prune(self.s.retain_jobs)
-            job = _Job(tid, agent, inv, pinned, access == "write", timeout)
+            job = _Job(tid, agent, inv, pinned, access == "write", timeout, prelaunch=prelaunch)
             self._jobs[tid] = job
             job.runner = asyncio.create_task(self._run(job))
             handed_off = True
@@ -238,8 +253,11 @@ class Supervisor:
             held_lease = await _until_stop(self._lease.acquire(job.write), job.stop)
             if held_lease:
                 held_sem = await _until_stop(self._sem.acquire(), job.stop)
+            refused = self._prelaunch_refusal(job) if not job.stop.is_set() else None
             if job.stop.is_set():
                 state, fields = self._stopped(job, started=False)
+            elif refused:
+                state, fields = "failed", {"error": refused}
             elif self.store.mark_running(job.tid):
                 state, fields = await self._execute(job, tmp)
         except Exception as e:  # process cleanup already happened inside run_group
@@ -253,6 +271,16 @@ class Supervisor:
             if held_lease:
                 self._lease.release(job.write)
             self._jobs.pop(job.tid, None)
+
+    @staticmethod
+    def _prelaunch_refusal(job: _Job) -> str | None:
+        if job.prelaunch is None:
+            return None
+        try:
+            job.prelaunch()
+        except BridgeError as e:
+            return f"scope_revoked: {e.code} at launch; not started"
+        return None
 
     async def _execute(self, job: _Job, tmp: Path) -> tuple[str, dict]:
         try:
@@ -283,7 +311,11 @@ class Supervisor:
         pr = parse_output(job.agent.adapter, res.stdout, res.returncode)
         text, cut = _cut(scrub(pr.text), self.s.snippet_bytes)
         error = scrub(pr.error)[:MAX_ERROR_CHARS] + note if pr.error else (note.lstrip("; ") or None)
-        return ("succeeded" if pr.ok else "failed",
+        if self.classify_usage and not pr.ok and is_usage_exhausted(pr, common["stderr_tail"]):
+            state = "usage_exhausted"  # hard stop: never retried by the bridge
+        else:
+            state = "succeeded" if pr.ok else "failed"
+        return (state,
                 dict(result_text=text, result_truncated=int(cut), error=error, session_id=pr.session_id,
                      usage_json=json.dumps(pr.usage) if pr.usage else None,
                      permission_denials_json=json.dumps(pr.denials) if pr.denials else None, **common))

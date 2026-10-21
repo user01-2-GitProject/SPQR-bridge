@@ -233,3 +233,54 @@ The unchanged stdio integration test passing outside the sandbox supports an env
 Reusable skill review: PASS for preserving the operational lessons, attempt limits, forced-exit caveat, isolated fixture provenance, and honest separation of baseline success from production permissions. Future harness implementations should additionally clear or explicitly set UV_PROJECT_ENVIRONMENT, assert resolved import containment rather than a substring, and use a bounded outer test timeout. Their absence in the retained historical harness does not invalidate this completed run because environment location, import location, inventory and successful termination were separately checked.
 
 Delivery state: the baseline prerequisite is now satisfied; v2 remains design work. Jimmy's design approval, implementation review gates, real principal grants/caps, credentials, live verification and production cutover remain separate. This review authorizes none of those actions.
+
+## Amendment A review (2026-10-21)
+
+Reviewer: independent non-author subagent on a different model (Claude Sonnet), approved by Jimmy.
+Author: Claude Opus. Verdict lines and findings preserved as delivered (reflowed into lists; wording unchanged in substance).
+
+### Round 1 — on Amendment A revision 1
+
+VERDICT: FAIL
+
+1. [blocker] No loop bound on the default (no-grant) path. Without a grant there is no round counter (A3), and the retry cap only matches a byte-identical request hash, so an agent defeats it by changing one character of the task. Silence is the common case, so Decision 6's "may not spin forever" is unmet where it matters most. Fix: key no-grant guardrails on principal + agent + workspace (not task text) — e.g., refuse after 3 consecutive non-success terminals, or treat "no grant" as an implicit grant with max_rounds=5 per rolling window — and apply the same no_progress check there.
+2. [blocker] Budget text outside the amendment is not marked superseded and still contradicts: line 105 ("budget policy" in registry; also per-principal agent allowlists/access modes/roots — A1 restricts to ceilings only), line 231 ("Currency scale and periods"), lines 232/238–240 ("available funds", cap reservation, settlement in the transaction paragraph), lines 246–248 (reservation/period-rollover test), the entire 260–269 budget paragraph, line 278 audit fields "reservation and actual cost", phase gates 1 and 4 (lines 292, 303: "budget tests", "budget races", "verified cost"), and line 332 "budget increase". Only the Ownership heading got a note. Fix: delete or strike these, or tag each "superseded by Amendment A"; the blanket "amendment wins" sentence is insufficient for a reviewer gate.
+3. [blocker] Credential model contradiction: A4 says sha256-of-token in registry, no SecretResolver, but lines 127–137 and 164 still mandate a SecretResolver and registry "secret references". Mark superseded and strike the resolver research from builder work (line 327).
+4. [should-fix] A2 claims v2 "neither requires nor reads" max_budget_usd, but adapters.py:39/86 passes `--max-budget-usd` to Claude whenever set. Jimmy ruled no dollar ceilings. Fix: v2 launch path must never emit that flag (test asserts it), or a cap-triggered stop will surface as `failed` and enter retry logic.
+5. [should-fix] Usage hard stop is too narrow. After a usage stop only the *identical* no-grant request is refused, or only the stopped grant closes; a slightly different request, or another principal, immediately retries the exhausted shared pool. Fix: record a per-agent usage_stop marker that refuses all new starts to that agent (for every caller) until Jimmy clears it — simpler than per-grant tracking and matches "report and wait for Jimmy."
+6. [should-fix] Usage detection is exploitable and weak. Phrase matching on agent output lets model/prompt-injected text ("usage limit reached") force `usage_exhausted` and close a grant (DoS lever). Fix: match only structured adapter error/stderr, never the model's result text; unrecognised exhaustion becomes `failed` → up to 3 retries. State this as a known limit and add a phrase-fixture test per adapter.
+7. [should-fix] Grant lifecycle gaps (forge/reuse/steal): (a) round counter, retry counter and grant re-validation must run inside the same BEGIN IMMEDIATE admission transaction or concurrent starts overrun max_rounds; (b) re-resolve the grant (expiry/removal) again at queued launch, as the registry is; otherwise a revoked grant still runs queued jobs; (c) define whether an idempotent replay, refused start, or pre-launch failure consumes a round (suggest: only admitted jobs; replays don't); (d) snapshot the effective scope into the job row (jobs.grant_id + resolved scope) so later registry edits don't widen a running job; (e) state grants are single-principal and expiry is mandatory with a short maximum. A grant reusable for up to 10 tasks is closer to a short-lived standing grant than "per job at task time"; say explicitly this is the accepted reading.
+8. [should-fix] Sub-delegation "no broader than parent" has no mechanism and is vacuous at depth 1. Say so plainly; don't add inheritance code now; tie any future depth to the recursion gate.
+9. [nit] sha256 of token is acceptable only if the token is ≥128-bit random: require `secrets.token_urlsafe(32)`, no salt/KDF needed, `hmac.compare_digest` on the digest, and a `credential_id.secret` token format so lookup doesn't scan principals. Never log the digest.
+10. [nit] no_progress comparison should use a stored hash of normalized result/error text on the job, not raw text — timestamps/nondeterministic output defeat it. Note it is best-effort.
+11. [nit] Simplification: drop `retry_cap_reached` as a separate hash-matching mechanism — one per-principal/agent/workspace consecutive-failure counter covers both grant and no-grant cases. Drop the separate unauthenticated line file if a single audit sink can be used safely.
+12. [nit] Rename "usage" in adapters.py USAGE_KEYS (token counts) or note it is unrelated to the new usage-exhaustion detection.
+
+### Round 2 — on Amendment A revision 2
+
+VERDICT: PASS
+
+Revision 2 resolves findings 1–12. The remaining items are small, and none block Phase 1.
+
+1. [should-fix] The superseded tags are applied line by line inside multi-line budget paragraphs. Untagged lines still read as live: 251, 253, 261, 275, 277–279. Commission line 11 still says "budgets". Line 152 ("resolver selected implicitly") is also untagged. Fix: one tag at the start of each superseded paragraph, or strike the paragraphs; remove "budgets" from line 11.
+2. [should-fix] The grant's expiry field is not defined, so "no more than 24 hours after issue" is unenforceable. Fix: require issued_at and expires_at; registry validation rejects the whole load (fail closed) if expires_at - issued_at > 24h, if issued_at is in the future, or if either field is missing. Treat a missing max_rounds as 5.
+3. [nit] The no-grant lineage can be reset by switching agent or workspace, or by waiting 60 minutes. Acceptable given the ceilings. State plainly that the bound is 3 failures and 5 rounds per lineage per hour; a principal with many ceiling roots can multiply it. Optionally add a per-principal hourly start ceiling later; not now.
+4. [nit] "Synchronous admission" depends on SQLite calls being synchronous in the single owner process. Add one concurrency test (N simultaneous start_task calls against max_rounds=5 produce exactly 5 admissions).
+5. [nit] Specify that usage_cleared compares against the stop's recorded UTC time, and reject a clear time in the future.
+6. [nit] Implement the no-progress tripwire and the failure counter as one query and one helper so they cannot drift.
+7. [nit] Keeping the separate auth-failure line file is justified. Cap its size and line length and write only allowlisted fields so an unauthenticated flood cannot fill the disk.
+8. [nit] Fidelity is now complete. Additions beyond the rulings are limited to the launch helper and the usage_cleared line; both are reasonable and simple.
+
+Security re-check: grant IDs are checked for ownership, expiry, per-principal use and re-check at launch, and the scope is snapshotted on the job, so no forge, widen, reuse or steal path was found. Hashing high-entropy tokens with sha256 is acceptable with compare_digest. No fail-open path found.
+
+Author's disposition of round 2: items 1, 2, 3, 4, 5, 6 and 7 applied in revision 3 of the amendment and covered by tests (registry validation, concurrent admission, bounded auth log). Round 1 item 9's `credential_id.secret` format and item 10's stored digest were not adopted: principals are few, so a full constant-time scan is simpler, and the tripwire compares stored state/result/error directly (best effort, as stated).
+
+## Phase 1 implementation review (2026-10-21)
+
+Reviewer: independent non-author subagent on a different model (Claude Sonnet). Author: Claude Opus.
+
+Round 1: VERDICT: FAIL. Ten findings: [blocker] write jobs could edit the registry (it could sit inside an allowed root); [should-fix] job pruning erased usage stops and loop-cap history; launch re-check ignored principal ceiling changes; v1 jobs would start reporting usage_exhausted; cancelled jobs could trip no_progress; [nit] 1-minute future tolerance on grant/clear times; refused get/cancel unaudited; list_agents advertised write without a grant; named-FIFO limit undocumented; workspace probing outside scope revealed existence.
+
+Round 2 (after fixes, each with a test written first): VERDICT: PASS. All ten fixed. Remaining nits: the launcher's token file is not location-checked like the registry (documented in Amendment A4: it belongs outside every root); the registry-location check runs after authentication (harmless).
+
+Evidence: `.venv/bin/python -m pytest -q -p no:cacheprovider` → 172 passed, 2 skipped (the same two skips as the clean baseline: no bridge.local.toml in the copy, live smoke not requested). The 90 pre-existing tests pass with their files byte-identical (sha256 checked before and after).
