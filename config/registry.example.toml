@@ -1,0 +1,29 @@
+# SPQR Bridge v2 — EXAMPLE principal registry (nonfunctional). Copy OUTSIDE every allowed root
+# (e.g. ~/.config/spqr/registry.toml) so no job can edit it; v2 refuses to start otherwise. Then
+# chmod 600. Re-read on every call; any error fails closed. See docs/DESIGN-V2.md, Amendment A.
+
+# Who may use the bridge. Identity and outer ceilings only, never a standing scope.
+# Token: python -c "import secrets; print(secrets.token_urlsafe(32))" > ~/.config/spqr/caesar.token
+# Digest: sha256sum of the token without a trailing newline.
+[principals.caesar]
+enabled = false
+token_sha256 = ["0000000000000000000000000000000000000000000000000000000000000000"]
+transports = ["stdio"]
+agents = ["claude", "codex"]             # ceiling: agents any job of this principal may use
+roots = ["/ABSOLUTE/PATH/TO/SPQR/workspaces"]  # ceiling: workspaces (inside allowed_roots)
+allow_write = false                      # ceiling: can a grant ever give write?
+
+# Per-job scope, issued by Jimmy when he gives the task. Tell the agent "use grant fix-login".
+# Without a grant a job is read-only at the ceiling agents/roots, 5 rounds per hour.
+# [grants.fix-login]
+# principal = "caesar"
+# access = "write"
+# agents = ["claude"]
+# roots = ["/ABSOLUTE/PATH/TO/SPQR/app"]
+# max_rounds = 5                         # 5–10
+# issued_at = "2026-10-21T15:00:00Z"
+# expires_at = "2026-10-21T23:00:00Z"    # at most 24h after issued_at
+
+# Clear a usage stop once the window has reset: stops before this time no longer block the agent.
+# [usage_cleared]
+# claude = "2026-10-21T20:00:00Z"

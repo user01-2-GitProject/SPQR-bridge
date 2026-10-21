@@ -231,10 +231,13 @@ async def test_successful_answer_mentioning_usage_is_not_a_stop(v2):
 
 # ---- loop guardrails (Decision 6) -----------------------------------------------
 
+FAILING = ("FAKE_MODE=fail", "FAKE_MODE=malformed", "FAKE_MODE=semantic")  # three different errors
+
+
 async def test_failure_cap_three_even_if_task_text_changes(v2):
     a = v2.gate("caesar")
-    for i in range(3):
-        j = await done(a, (await a.start("claude", f"FAKE_MODE=fail try{i}", None, str(v2.ws)))["task_id"])
+    for task in FAILING:
+        j = await done(a, (await a.start("claude", task, None, str(v2.ws)))["task_id"])
         assert j["state"] == "failed"
     with pytest.raises(BridgeError) as e:
         await a.start("claude", "FAKE_MODE=fail a new approach", None, str(v2.ws))
@@ -246,7 +249,7 @@ async def test_failure_cap_three_even_if_task_text_changes(v2):
 async def test_success_resets_failure_cap(v2):
     v2.registry(grants={"g1": {"principal": "caesar", "access": "read_only", "max_rounds": 10}})
     a = v2.gate("caesar")
-    for task in ("FAKE_MODE=fail 1", "FAKE_MODE=fail 2", "ok", "FAKE_MODE=fail 3", "FAKE_MODE=fail 4"):
+    for task in (FAILING[0], FAILING[1], "ok", FAILING[2], FAILING[0]):
         await done(a, (await a.start("claude", task, None, str(v2.ws), grant_id="g1"))["task_id"])
     await a.start("claude", "still allowed", None, str(v2.ws), grant_id="g1")
 
@@ -353,3 +356,78 @@ async def test_audit_rows_allowlisted(v2):
     assert {r["outcome"] for r in rows} >= {"admitted", "access_denied"}
     assert all(r["principal_id"] == "caesar" for r in rows)
     assert "SECRET-TASK-TEXT" not in json.dumps(rows) and str(v2.ws) not in json.dumps(rows)
+
+
+# ---- implementation review round 1 fixes -------------------------------------------
+
+async def test_workspace_containing_registry_refused(v2):
+    # a workspace holding the registry would let a write job rewrite its own scope
+    v2.registry()
+    write_registry(v2.ws / "sub" / "registry.toml", v2.regp.read_text())
+    g = PrincipalGate(v2.sup, v2.ws / "sub" / "registry.toml", v2.gate("caesar").auth)
+    for ws in (v2.ws, v2.ws / "sub"):
+        with pytest.raises(BridgeError) as e:
+            await g.start("claude", "x", None, str(ws))
+        assert code(e) == "workspace_denied"
+
+
+async def test_usage_stop_survives_pruning(v2):
+    a = v2.gate("caesar")
+    await done(a, (await a.start("drained", "work", None, str(v2.ws)))["task_id"])
+    v2.sup.store.db.execute("DELETE FROM jobs")
+    with pytest.raises(BridgeError) as e:
+        await a.start("drained", "work", None, str(v2.ws))
+    assert code(e) == "usage_stopped"
+
+
+def test_prune_keeps_recent_v2_rows(v2):
+    st = v2.sup.store
+    for i in range(15):
+        st.create(dict(task_id=f"t_{i:016x}", agent_id="claude", access="read_only", workspace="/w",
+                       timeout_s=1, request_hash="h", principal_id="caesar"))
+        st.finish(f"t_{i:016x}", "failed", error="e")
+    st.prune(10)
+    assert st.db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 15
+
+
+async def test_launch_recheck_covers_principal_ceiling(v2):
+    v2.registry(grants={"g1": {"principal": "caesar", "access": "write"}})
+    a = v2.gate("caesar")
+    hold = await a.start("claude", f"FAKE_MODE=hang {v2.tmp / 'p'}", None, str(v2.ws), access="write",
+                         grant_id="g1")
+    queued = await a.start("claude", "later", None, str(v2.ws), access="write", grant_id="g1")
+    # grant untouched, but Jimmy removes write from the principal's ceiling
+    v2.registry(principals={"caesar": {"allow_write": False}},
+                grants={"g1": {"principal": "caesar", "access": "write"}})
+    await a.cancel(hold["task_id"])
+    j = await done(a, queued["task_id"])
+    assert j["state"] == "failed" and "scope_revoked" in j["error"] and j["started_at"] is None
+
+
+async def test_v1_supervisor_keeps_failed_state(v2):
+    r = await v2.sup.start("drained", "v1 job", None, str(v2.ws))
+    assert (await v2.sup.wait(r["task_id"], 20))["state"] == "failed"
+
+
+async def test_cancelled_jobs_do_not_trip_no_progress(v2):
+    v2.registry(grants={"g1": {"principal": "caesar", "access": "read_only", "max_rounds": 10}})
+    a = v2.gate("caesar")
+    for i in range(2):
+        r = await a.start("claude", f"FAKE_MODE=hang {v2.tmp / f'p{i}'}", None, str(v2.ws), grant_id="g1")
+        await a.cancel(r["task_id"])
+    await a.start("claude", "next", None, str(v2.ws), grant_id="g1")
+
+
+async def test_refused_reads_are_audited(v2):
+    a = v2.gate("caesar")
+    with pytest.raises(BridgeError):
+        await a.wait("t_0000000000000000", 0)
+    with pytest.raises(BridgeError):
+        await a.cancel("t_0000000000000000")
+    outcomes = {(r[0], r[1]) for r in v2.sup.store.db.execute("SELECT tool, outcome FROM audit_events")}
+    assert {("get_task", "unknown_task"), ("cancel_task", "unknown_task")} <= outcomes
+
+
+async def test_list_agents_without_grant_is_read_only(v2):
+    out = v2.gate("caesar").list_agents()
+    assert all(x["access_modes"] == ["read_only"] for x in out["agents"])

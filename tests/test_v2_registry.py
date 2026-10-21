@@ -78,6 +78,8 @@ def test_rotation_allows_overlapping_credentials(reg):
     {"grants": {"g1": {"principal": "caesar", "access": "read_only", "expires_at": soon(25)}}},
     {"grants": {"g1": {"principal": "caesar", "access": "read_only", "issued_at": soon(1), "expires_at": soon(2)}}},
     {"cleared": {"claude": soon(1)}},
+    {"cleared": {"claude": soon(10 / 60)}},
+    {"grants": {"g1": {"principal": "caesar", "access": "read_only", "issued_at": soon(10 / 60)}}},
     {"cleared": {"nobody here": soon(-1)}},
 ])
 def test_invalid_registry_rejected(reg, over):
