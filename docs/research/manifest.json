@@ -1,0 +1,65 @@
+[
+  {
+    "name": "hermes-mcp",
+    "url": "https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp",
+    "filename": "hermes-mcp.txt",
+    "chars": 50195,
+    "retrieval": "live HTTP fetched by Caesar; text extraction, not a model summary"
+  },
+  {
+    "name": "hermes-programmatic",
+    "url": "https://hermes-agent.nousresearch.com/docs/developer-guide/programmatic-integration",
+    "filename": "hermes-programmatic.txt",
+    "chars": 20734,
+    "retrieval": "live HTTP fetched by Caesar; text extraction, not a model summary"
+  },
+  {
+    "name": "hermes-a2a",
+    "url": "https://hermes-agent.nousresearch.com/docs/user-guide/messaging/a2a",
+    "filename": "hermes-a2a.txt",
+    "chars": 9041,
+    "retrieval": "live HTTP fetched by Caesar; text extraction, not a model summary"
+  },
+  {
+    "name": "hermes-bots",
+    "url": "https://hermes-agent.nousresearch.com/docs/user-guide/bot-mode",
+    "filename": "hermes-bots.txt",
+    "chars": 52373,
+    "retrieval": "live HTTP fetched by Caesar; text extraction, not a model summary"
+  },
+  {
+    "name": "mcp-transports",
+    "url": "https://modelcontextprotocol.io/specification/2026-07-28/basic/transports",
+    "filename": "mcp-transports.txt",
+    "chars": 4310,
+    "retrieval": "live HTTP fetched by Caesar; text extraction, not a model summary"
+  },
+  {
+    "name": "codex-headless",
+    "url": "https://developers.openai.com/codex/noninteractive",
+    "filename": "codex-headless.txt",
+    "chars": 25636,
+    "retrieval": "live HTTP fetched by Caesar; text extraction, not a model summary"
+  },
+  {
+    "name": "claude-headless",
+    "url": "https://code.claude.com/docs/en/headless",
+    "filename": "claude-headless.txt",
+    "chars": 30974,
+    "retrieval": "live HTTP fetched by Caesar; text extraction, not a model summary"
+  },
+  {
+    "name": "acp-overview",
+    "url": "https://agentclientprotocol.com/overview/introduction",
+    "filename": "acp-overview.txt",
+    "chars": 30748,
+    "retrieval": "live HTTP fetched by Caesar; text extraction, not a model summary"
+  },
+  {
+    "name": "fastmcp-quickstart",
+    "url": "https://gofastmcp.com/getting-started/quickstart",
+    "filename": "fastmcp-quickstart.txt",
+    "chars": 7016,
+    "retrieval": "live HTTP fetched by Caesar; text extraction, not a model summary"
+  }
+]

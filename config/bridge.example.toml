@@ -1,0 +1,35 @@
+# SPQR Agent Bridge — EXAMPLE registry. Copy to config/bridge.local.toml (git-ignored) and edit.
+# This is a trusted operator file selected at server startup (--config). No secrets belong here:
+# CLIs keep their own auth. env_passthrough lists variable NAMES only.
+
+[server]
+state_dir = "/ABSOLUTE/PATH/TO/SPQR/.state"   # one live server per state_dir (exclusive lock)
+allowed_roots = ["/ABSOLUTE/PATH/TO/SPQR"]    # launch-cwd allowlist; NOT an OS sandbox
+max_concurrency = 2
+max_pending = 8
+default_timeout_seconds = 600
+max_timeout_seconds = 1800
+max_output_bytes = 2000000      # stdout cap; exceeding it kills the process group
+snippet_bytes = 16000           # result_text retained/returned
+retain_jobs = 200               # older terminal records are pruned
+
+[agents.claude]
+adapter = "claude"
+binary = "/ABSOLUTE/PATH/TO/claude"
+enabled = true
+allow_write = false             # set true only after verifying restricted edit mode yourself
+max_turns = 8
+max_budget_usd = 0.50
+live_verified = false           # operator sets true after scripts/live_smoke.sh passes
+env_passthrough = []
+
+[agents.codex]
+adapter = "codex"
+binary = "/ABSOLUTE/PATH/TO/codex"
+enabled = false                 # enable once a bounded live call completes
+allow_write = false             # write => --sandbox workspace-write (never danger-full-access)
+
+[agents.omp]
+adapter = "omp"
+binary = "/ABSOLUTE/PATH/TO/omp"
+enabled = false                 # no enforced file restriction; write is rejected by config validation

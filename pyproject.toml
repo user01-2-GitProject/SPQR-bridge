@@ -1,0 +1,31 @@
+[project]
+name = "spqr-bridge"
+version = "0.1.0"
+description = "Local stdio MCP facade for delegating bounded tasks to installed agent CLIs"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp==2.3.0",
+    "pydantic==2.14.1",  # imported directly by config.py/server.py; pinned to the tested version
+]
+
+[project.scripts]
+spqr-bridge = "spqr_bridge.server:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/spqr_bridge"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = ["live: gated live test against a real installed agent CLI (SPQR_LIVE_SMOKE=1)"]

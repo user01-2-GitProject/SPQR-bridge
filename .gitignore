@@ -1,0 +1,8 @@
+.venv/
+.state/
+__pycache__/
+.pytest_cache/
+config/bridge.local.toml
+tests/live_fixture/
+.verification/
+*.png

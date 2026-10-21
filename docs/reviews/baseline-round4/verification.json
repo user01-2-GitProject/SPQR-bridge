@@ -1,0 +1,7 @@
+{
+  "exit_code": 0,
+  "manifest_files": 22,
+  "source_copy_match": true,
+  "real_local_config_unchanged": true,
+  "import": "/tmp/spqr-isolated-baseline-ell2ucn1/src/spqr_bridge/__init__.py"
+}
