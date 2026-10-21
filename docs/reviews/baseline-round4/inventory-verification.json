@@ -1,0 +1,7 @@
+{
+  "complete_source_test_inventory_match": true,
+  "source_test_files": 19,
+  "example_config_match": true,
+  "isolated_environment_exists": true,
+  "isolated_import_path": "/tmp/spqr-isolated-baseline-ell2ucn1/src/spqr_bridge/__init__.py"
+}
