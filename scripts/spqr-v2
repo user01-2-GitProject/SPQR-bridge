@@ -1,0 +1,20 @@
+#!/bin/sh
+# The one command every MCP client runs to take a bridge v2 slot (stdio):
+#   spqr-v2 SLOT
+# Reads $SPQR_CONFIG_DIR/SLOT.token and $SPQR_CONFIG_DIR/registry.toml (default ~/.config/spqr),
+# and $SPQR_BRIDGE_CONFIG (default config/bridge.local.toml in this repo). See docs/CLIENTS.md.
+set -eu
+slot="${1:-}"
+case "$slot" in
+  [a-z]*) ;;
+  *) echo "spqr-v2: usage: spqr-v2 SLOT (lowercase slot name)" >&2; exit 2 ;;
+esac
+case "$slot" in *[!a-z0-9_-]*) bad=1 ;; *) bad= ;; esac
+if [ -n "$bad" ] || [ "${#slot}" -gt 32 ]; then
+  echo "spqr-v2: bad slot name: use a-z, 0-9, _ and - (max 32)" >&2; exit 2
+fi
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+[ -x "$repo/.venv/bin/python" ] || { echo "spqr-v2: no .venv in $repo: run 'uv sync' there first" >&2; exit 2; }
+dir="${SPQR_CONFIG_DIR:-${HOME:?set SPQR_CONFIG_DIR}/.config/spqr}"
+exec "$repo/.venv/bin/python" -m spqr_bridge.launch --token-file "$dir/$slot.token" -- \
+  --config "${SPQR_BRIDGE_CONFIG:-$repo/config/bridge.local.toml}" --registry "$dir/registry.toml"
