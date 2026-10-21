@@ -10,6 +10,21 @@ It has five tools: `list_agents`, `start_task`, `get_task`, `cancel_task` and `d
 
 For Hermes-to-Hermes collaboration, keep using native `delegate_task` / `message_agent` / Kanban.
 
+## v2 — decided, in build
+
+The product, in the operator's words: *"I tell an agent a task and it has the ability to task others."*
+
+- **Principals, not possession.** Every caller is a named principal the operator designates. No identity, no service. The registry is operator-owned local config; adding or revoking a principal takes effect without a rebuild.
+- **One daemon, many commanders.** A single long-lived bridge owns the job store; Hermes profiles and other clients connect instead of spawning their own server. Tailnet-only HTTP endpoint, per-principal tokens — never public, tokens never in git or logs.
+- **Open roster.** Claude, Codex, OMP at launch, OpenCode next; adding any agent in the operator's stable is registry config, never a rebuild. Chained delegation follows the same registry, depth, and scope rules.
+- **Scope is set at the time of use.** No standing grants — each job carries the operator's per-job scope (read/write, workspaces, who it may task in turn). Sub-delegations inherit nothing broader; unspecified scope defaults to the minimum.
+- **The limit is usage.** No per-job dollar cap layer. Usage exhaustion is a hard stop — no retries, no paid fallback, no provider-switching — reported as a usage-stop.
+- **Loop guardrails.** Failure retries cap at 3–5, then stop and report. Progress loops cap at 5–10, with a no-new-state tripwire.
+- **Jobs are owned and audited.** A job belongs to its principal; nobody reads or cancels another's jobs. Every call is audit-logged: principal, tool, job, agent, outcome.
+- **Global delegation skill.** `spqr-agent-delegation` ships by default in every harness and profile; onboarding a new agent = the skill (knows how) + a registry entry (is allowed).
+
+Borrowed from StarNet, adapted to the rules above: **Task Briefs** (a job that hits a real fork pauses and asks one concrete question with options instead of guessing), **OUTBOX** (deliverables land as real files), a **usage ledger** shown as-is — accounting, not a governor — and the **provable-state law**: the bridge reports only job state it can back with a signal. StarNet's per-job budget caps were considered and rejected; usage is the ceiling here.
+
 ## Quickstart
 ```sh
 cd "/home/jimmy/Projects (jimmy's)/SPQR"
