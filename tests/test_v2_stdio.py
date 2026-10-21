@@ -105,3 +105,11 @@ def test_auth_failure_log_is_bounded(files):
     tok.write_text("wrong-" + "z" * 43)
     run_v2(launch_args(cfg, reg, tok))
     assert log.stat().st_size <= 1_100_000
+
+
+def test_registry_inside_allowed_root_refused(files, tmp_path):
+    cfg, reg, tok, ws, _ = files
+    inside = write_registry(ws / "registry.toml", reg.read_text())
+    r = run_v2(["-m", "spqr_bridge.launch", "--token-file", str(tok), "--", "--config", str(cfg),
+                "--registry", str(inside)])
+    assert r.returncode != 0 and r.stdout == b"" and b"registry" in r.stderr

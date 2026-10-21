@@ -98,6 +98,14 @@ A4. Phase 1 simplifications chosen by the builder (keep it uncomplicated).
   to an append-only line file in state_dir, because opening the job store for an
   unauthenticated caller would run crash recovery on its behalf. That file holds only time
   and reason code and stops growing at 1 MB.
+- Registry placement: the registry must live outside every allowed root (v2 refuses to
+  start otherwise) and no workspace may contain it, so a write job cannot rewrite its own
+  scope. Same-user workers are still not OS-confined (see Recursion section); this closes
+  the obvious path, not every path. The launcher's token file belongs outside roots too.
+- Durability: usage stops are their own table (usage_stops), so pruning jobs never lifts one;
+  pruning keeps v2 rows younger than 24 hours so the A3 caps cannot be reset by volume.
+- The `usage_exhausted` state is produced only by the v2 entry point; v1 keeps reporting
+  `failed` until cutover.
 - Revocation in Phase 1: the registry is re-read on every call and before launch; a
   disabled, expired or removed principal gets a generic auth error and cannot read results.
   An unreadable or invalid registry fails closed. Stopping already-running jobs waits for
