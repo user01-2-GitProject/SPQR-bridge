@@ -11,8 +11,8 @@ dir="${SPQR_CONFIG_DIR:-${HOME:?set SPQR_CONFIG_DIR}/.config/spqr}"
 cfg="${SPQR_BRIDGE_CONFIG:-$repo/config/bridge.local.toml}"
 units="${XDG_CONFIG_HOME:-${HOME:?}/.config}/systemd/user"
 unit="$units/spqr-bridge.service"
-case "$repo$dir$cfg" in *'"'*|*'\'*|*'%'*) echo "spqr-daemon: paths must not contain \", \\ or %" >&2; exit 2 ;; esac
-[ -e "$unit" ] && { echo "spqr-daemon: $unit exists; remove it first to reinstall" >&2; exit 2; }
+case "$repo$dir$cfg" in *'"'*|*'\'*|*'%'*|*'$'*) echo "spqr-daemon: paths must not contain \", \\, % or \$" >&2; exit 2 ;; esac
+{ [ -e "$unit" ] || [ -L "$unit" ]; } && { echo "spqr-daemon: $unit exists; remove it first to reinstall" >&2; exit 2; }
 mkdir -p "$units"
 mkdir -p -m 700 "$dir"
 cat > "$unit" <<UNIT
@@ -30,6 +30,8 @@ SendSIGKILL=yes
 TimeoutStopSec=15
 Restart=on-failure
 RestartSec=5
+# Exit 2 is a refused start (config, identity, held lock): retrying cannot fix it.
+RestartPreventExitStatus=2
 NoNewPrivileges=yes
 
 [Install]

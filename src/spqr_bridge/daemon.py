@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import fcntl
 import json
 import os
 import re
@@ -97,6 +98,7 @@ class SharedOwner:
         self.server = None
         self.connections: set[asyncio.Task] = set()
         self.socket_identity = None
+        self.socket_lock: int | None = None
         self.rate_tokens = 64.0
         self.rate_at: float | None = None
 
@@ -124,7 +126,21 @@ class SharedOwner:
         # Take the state lock first: a live owner holds it for its whole lifetime, so
         # holding it proves a leftover socket is stale (a crash). Only a real socket is
         # removed; any other file or symlink at the path is refused.
-        self.sup = Supervisor(self.cfg, Store(self.cfg.server.state_dir))
+        # The socket path gets its own lock too, so an owner of a different state_dir
+        # can never mistake a live socket for a stale one.
+        self.socket_lock = os.open(str(self.socket) + ".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW
+                                   | os.O_CLOEXEC, 0o600)
+        try:
+            fcntl.flock(self.socket_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(self.socket_lock)
+            self.socket_lock = None
+            raise RuntimeError("another bridge owner holds this socket path") from None
+        try:
+            self.sup = Supervisor(self.cfg, Store(self.cfg.server.state_dir))
+        except BaseException:
+            await self.__aexit__(None, None, None)
+            raise
         try:
             st = self.socket.lstat()
         except FileNotFoundError:
@@ -153,13 +169,16 @@ class SharedOwner:
         return self
 
     async def __aexit__(self, *_):
+        # Cancel connections first: on 3.12+ wait_closed() waits for every open client,
+        # so one idle peer would hold shutdown past systemd's stop timeout.
         if self.server is not None:
             self.server.close()
-            await self.server.wait_closed()
         for task in list(self.connections):
             task.cancel()
         if self.connections:
             await asyncio.gather(*list(self.connections), return_exceptions=True)
+        if self.server is not None:
+            await self.server.wait_closed()
         if self.sup is not None:
             await self.sup.shutdown()
         if self.socket_identity is not None:
@@ -169,6 +188,9 @@ class SharedOwner:
                     self.socket.unlink()
             except FileNotFoundError:
                 pass
+        if self.socket_lock is not None:
+            os.close(self.socket_lock)  # releases the flock; the lock file itself stays
+            self.socket_lock = None
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         task = asyncio.current_task()

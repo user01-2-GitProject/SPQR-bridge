@@ -23,5 +23,6 @@ sock="${SPQR_BRIDGE_SOCKET:-$dir/bridge.sock}"
 if [ -S "$sock" ]; then
   exec "$repo/.venv/bin/python" -m spqr_bridge.forward --socket "$sock" --token-file "$dir/$slot.token"
 fi
+echo "spqr-v2: no shared bridge at $sock; running standalone (one holder at a time)" >&2
 exec "$repo/.venv/bin/python" -m spqr_bridge.launch --token-file "$dir/$slot.token" -- \
   --config "${SPQR_BRIDGE_CONFIG:-$repo/config/bridge.local.toml}" --registry "$dir/registry.toml"

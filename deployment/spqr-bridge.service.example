@@ -11,8 +11,11 @@ UMask=0077
 KillMode=control-group
 SendSIGKILL=yes
 TimeoutStopSec=15
-# A crash leaves the socket as a recovery marker; inspect cleanup before restart.
-Restart=no
+# Prefer scripts/spqr-daemon install, which fills in these paths.
+# A crash leaves the socket behind; the next start removes it only under the state lock.
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=2
 NoNewPrivileges=yes
 
 [Install]
