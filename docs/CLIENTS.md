@@ -14,8 +14,11 @@ whichever agent runs the slot's command holds it.
 - **Tools:** `list_agents`, `start_task`, `get_task`, `cancel_task`. Without `grant_id` a job is
   read-only. jimmy issues wider scope per job as a grant id ("use grant fix-login").
 - **Stops are final:** `usage_exhausted`, retry/round caps and `no_progress` go back to jimmy.
-- **One holder at a time:** the server locks its `state_dir`, so while one client has the bridge
-  open, a second one fails to start. (Phase 2's daemon removes this limit.)
+- **Shared owner (Phase 2, local only):** when `DIR/bridge.sock` exists, `scripts/spqr-v2 SLOT`
+  becomes a thin forwarder to the `spqr-bridge` daemon, so every slot can be open at once and each
+  still sees only its own jobs. Without the daemon it runs standalone, and only one client can
+  hold the bridge at a time (the server locks its `state_dir`). Client configs are the same
+  either way. No network listener; HTTP for Tailscale is a separate step.
 - **Swapping the holder:** point a different agent at the same slot and remove it from the old
   one. To cut someone off, set `enabled = false` on the slot or drop its digest from the registry.
 
@@ -34,6 +37,18 @@ cd "/home/jimmy/Projects (jimmy's)/SPQR"
 This writes `~/.config/spqr/caesar.token` and prints a `[principals.caesar]` block. Paste the block
 into `~/.config/spqr/registry.toml` and `chmod 600` it. It never overwrites an existing token: to re-issue, delete
 `caesar.token` first and replace the old block.
+
+## Run the shared owner (once, by jimmy)
+
+```sh
+"$SPQR/scripts/spqr-daemon" install      # writes ~/.config/systemd/user/spqr-bridge.service
+systemctl --user daemon-reload && systemctl --user enable --now spqr-bridge
+```
+
+The daemon takes the same `state_dir` lock as a standalone bridge, so first stop any client that
+holds the bridge standalone (for example restart the Hermes gateway after the daemon is up).
+It is a systemd user service with control-group cleanup: stopping it stops every job it started.
+A crash leaves `bridge.sock` behind; the next start removes it only after taking the state lock.
 
 ## One command per client
 

@@ -121,10 +121,19 @@ class SharedOwner:
         protected = [self.registry, parent.resolve(), self.cfg.server.state_dir.resolve()]
         if any(p.is_relative_to(r) for r in self.cfg.server.allowed_roots for p in protected):
             raise RuntimeError("registry, socket and daemon state must be outside all worker roots")
-        # Never remove an existing socket: it may belong to a live owner. Recovery is deliberate.
-        if self.socket.exists() or self.socket.is_symlink():
-            raise RuntimeError("socket already exists; inspect its owner before recovery")
+        # Take the state lock first: a live owner holds it for its whole lifetime, so
+        # holding it proves a leftover socket is stale (a crash). Only a real socket is
+        # removed; any other file or symlink at the path is refused.
         self.sup = Supervisor(self.cfg, Store(self.cfg.server.state_dir))
+        try:
+            st = self.socket.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            if not stat.S_ISSOCK(st.st_mode) or st.st_uid != os.getuid():
+                await self.__aexit__(None, None, None)
+                raise RuntimeError("socket path is occupied by something else; inspect it")
+            self.socket.unlink()
         listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
             # Bind directly: asyncio's path= convenience removes pre-existing sockets.
