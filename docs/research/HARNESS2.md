@@ -73,6 +73,30 @@ the file layout and outputs, then do one SPQR task by hand with k=1 before writi
   the other when it sets the goal and budget, and a rock can be promoted if it turns out harder
   than expected.
 
+## Proposal for the next meeting: each role is a homepage
+
+From the "Agentic OS" doc (a 2-page framework that splits one agent into 7 layers). The idea for
+SPQR: **every role (Caesar through Jules) is a folder with the same 7 layers, written once in a
+neutral format.** It's the role's homepage: whichever agent fills the slot starts there and gets
+the same direction, rules and memory.
+
+| Layer | SPQR today |
+|---|---|
+| Identity | each role's rules |
+| Knowledge | the Library of Alexandria, loaded only when needed |
+| Memory | shared memory and lessons |
+| Workers | the Body agents via the bridge, each isolated |
+| Automation | skills, hooks, the meeting ritual |
+| Guardrails | the bridge's grants, read-only default, hard stops |
+| Evaluation | **the gap**; this is what the Harness² pattern above adds |
+
+SPQR translates the folder into whatever the filling agent reads (CLAUDE.md, AGENTS.md,
+GEMINI.md, opencode or omp config), so any agent can step into any slot, Caesar included. This
+fits the "harness as a folder per Body member" step above, widened from Body members to every role.
+
+Questions: which roles get a homepage first, and where the folders live (shared memory or the
+bridge repo)?
+
 ## Questions for the meeting
 
 - Which agent is the default editor/Brain for refinement?

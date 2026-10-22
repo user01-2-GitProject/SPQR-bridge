@@ -12,7 +12,7 @@ For Hermes-to-Hermes collaboration, keep using native `delegate_task` / `message
 
 ## Quickstart
 ```sh
-cd "/home/jimmy/Projects (jimmy's)/SPQR"
+cd "/home/jimmy/Projects/SPQR/bridge"
 uv sync                                    # project-local .venv from uv.lock (mcp==2.3.0)
 uv run pytest                              # deterministic tests with FAKE agent fixtures; no model calls
 cp config/bridge.example.toml config/bridge.local.toml   # already present on this machine
@@ -52,8 +52,8 @@ Use the Hermes native custom-server CLI for the `caesar` profile (not the catalo
 absolute paths:
 ```sh
 hermes --profile caesar mcp add spqr-bridge \
-  --command "/home/jimmy/Projects (jimmy's)/SPQR/.venv/bin/spqr-bridge" \
-  --args --config "/home/jimmy/Projects (jimmy's)/SPQR/config/bridge.local.toml"
+  --command "/home/jimmy/Projects/SPQR/bridge/.venv/bin/spqr-bridge" \
+  --args --config "/home/jimmy/Projects/SPQR/bridge/config/bridge.local.toml"
 hermes --profile caesar mcp test spqr-bridge
 ```
 Then start a fresh Hermes session and run `/reload-mcp`. No env is needed beyond the defaults.
