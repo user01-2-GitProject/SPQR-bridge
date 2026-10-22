@@ -120,3 +120,13 @@ def test_installer_writes_user_unit_once(tmp_path):
     again = subprocess.run([str(INSTALLER), "install"], capture_output=True, text=True, timeout=20, env=env)
     assert again.returncode != 0 and "exists" in again.stderr
     assert (xdg / "systemd" / "user" / "spqr-bridge.service").read_text() == unit
+
+
+def test_unit_executable_path_has_no_special_characters(tmp_path):
+    # systemd refuses an ExecStart program path with spaces or quotes even when quoted, and the
+    # real repo path has both; a plain launcher runs the venv python given as its argument.
+    env = {**os.environ, "XDG_CONFIG_HOME": str(tmp_path / "xdg"), "SPQR_CONFIG_DIR": str(tmp_path / "spqr")}
+    assert subprocess.run([str(INSTALLER), "install"], capture_output=True, timeout=20, env=env).returncode == 0
+    unit = (tmp_path / "xdg" / "systemd" / "user" / "spqr-bridge.service").read_text()
+    exec_line = next(line for line in unit.splitlines() if line.startswith("ExecStart="))
+    assert exec_line.startswith('ExecStart=/usr/bin/env "')
