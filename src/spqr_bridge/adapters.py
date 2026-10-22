@@ -166,6 +166,10 @@ def _parse_claude(out: bytes) -> ParseResult:
     subtype = o.get("subtype")
     if o.get("is_error") is not False or subtype != "success":
         detail = subtype[:64] if isinstance(subtype, str) else "is_error"
+        if subtype == "success" and text.strip():
+            # Claude reports CLI-level failures (expired login, bad flags) as subtype "success"
+            # with is_error true; the reason is only in the result text.
+            detail = text.strip().splitlines()[0][:200]
         return ParseResult(False, text, f"backend_error: {detail}", sid, usage, denials)
     if not text.strip():
         return ParseResult(False, "", "malformed_output: empty or missing result text", sid, usage, denials)

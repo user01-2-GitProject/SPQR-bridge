@@ -89,6 +89,12 @@ def test_parse_claude_semantic_error():
     assert not r.ok and "error_max_turns" in r.error
 
 
+def test_parse_claude_error_reports_reason_not_success():
+    out = b'{"type":"result","subtype":"success","is_error":true,"result":"Failed to authenticate: OAuth session expired","session_id":"s1"}'
+    r = parse_output("claude", out, 1)
+    assert not r.ok and r.error.endswith("backend_error: Failed to authenticate: OAuth session expired")
+
+
 @pytest.mark.parametrize("out", [b"", b"not json", b"[1,2]"])
 def test_parse_claude_malformed(out):
     r = parse_output("claude", out, 0)
