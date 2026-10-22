@@ -1,5 +1,6 @@
 """Slice 2: native argv generation and backend output parsing (no processes)."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -93,6 +94,26 @@ def test_parse_claude_error_reports_reason_not_success():
     out = b'{"type":"result","subtype":"success","is_error":true,"result":"Failed to authenticate: OAuth session expired","session_id":"s1"}'
     r = parse_output("claude", out, 1)
     assert not r.ok and r.error.endswith("backend_error: Failed to authenticate: OAuth session expired")
+
+
+def test_parse_omp_event_stream_returns_final_answer():
+    lines = [
+        {"type": "session", "version": 3, "id": "sess-1", "cwd": "/w"},
+        {"type": "message_end", "message": {"role": "user", "content": [{"type": "text", "text": "say pong"}]}},
+        {"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "delta": "pong"}},
+        {"type": "agent_end", "messages": [
+            {"role": "user", "content": [{"type": "text", "text": "say pong"}]},
+            {"role": "assistant", "content": [{"type": "text", "text": "pong", "textSignature": "x"}]}]},
+    ]
+    out = "\n".join(json.dumps(x) for x in lines).encode()
+    r = parse_output("omp", out, 0)
+    assert r.ok and r.text == "pong" and r.session_id == "sess-1"
+
+
+def test_parse_omp_agent_end_without_answer_fails():
+    out = json.dumps({"type": "agent_end", "messages": [{"role": "user", "content": []}]}).encode()
+    r = parse_output("omp", out, 0)
+    assert not r.ok and "agent_end" in r.error
 
 
 @pytest.mark.parametrize("out", [b"", b"not json", b"[1,2]"])
