@@ -34,6 +34,7 @@ REQUIRED_FLAGS = {
                "--max-turns", "--output-format"],
     "codex": ["--json", "--ephemeral", "--ignore-user-config", "--sandbox", "--skip-git-repo-check"],
     "omp": ["--mode"],
+    "command": [],
 }
 def expected_flags(agent: AgentConfig) -> list[str]:
     flags = list(REQUIRED_FLAGS[agent.adapter])
@@ -94,6 +95,10 @@ def build_invocation(agent: AgentConfig, task: str, context: str | None, workspa
         if access == "write":
             raise ValueError("omp has no enforced file restriction; write is unsupported")
         argv = [b, "-p", "--mode", "json"]
+    elif agent.adapter == "command":
+        if access == "write":
+            raise ValueError("command write access is unsupported")
+        argv = [b, *agent.argv]
     else:  # pragma: no cover - config validation prevents this
         raise ValueError("unknown adapter")
     return Invocation(argv=argv, stdin=stdin)
@@ -225,8 +230,14 @@ def is_usage_exhausted(pr: "ParseResult", stderr_tail: str | None) -> bool:
     return any(USAGE_EXHAUSTED.search(t) for t in (pr.error, pr.text, stderr_tail) if t)
 
 
+def _parse_text(out: bytes) -> ParseResult:
+    text = out.decode("utf-8", "replace").strip()
+    return ParseResult(True, text, None) if text else ParseResult(False, "", "malformed_output: empty output")
+
+
 def parse_output(adapter: str, out: bytes, returncode: int) -> ParseResult:
-    r = {"claude": _parse_claude, "codex": _parse_codex, "omp": _parse_omp}[adapter](out)
+    r = {"claude": _parse_claude, "codex": _parse_codex, "omp": _parse_omp,
+         "command": _parse_text}[adapter](out)
     if returncode != 0:
         detail = r.error or "backend reported no error detail"
         return ParseResult(False, r.text, f"exit {returncode}: {detail}", r.session_id, r.usage, r.denials)

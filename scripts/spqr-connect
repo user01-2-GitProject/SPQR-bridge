@@ -1,0 +1,17 @@
+#!/bin/sh
+# Thin client of the shared owner. Does not create a Store or start another daemon.
+set -eu
+slot="${1:-}"
+case "$slot" in
+  [a-z]*) ;;
+  *) echo "spqr-connect: usage: spqr-connect SLOT (lowercase slot name)" >&2; exit 2 ;;
+esac
+case "$slot" in *[!a-z0-9_-]*) bad=1 ;; *) bad= ;; esac
+if [ "$#" -ne 1 ] || [ -n "$bad" ] || [ "${#slot}" -gt 32 ]; then
+  echo "spqr-connect: bad slot name: use a-z, 0-9, _ and - (max 32)" >&2; exit 2
+fi
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+[ -x "$repo/.venv/bin/python" ] || { echo "spqr-connect: no .venv: run uv sync in the bridge repo" >&2; exit 2; }
+dir="${SPQR_CONFIG_DIR:-${HOME:?set SPQR_CONFIG_DIR}/.config/spqr}"
+exec "$repo/.venv/bin/python" -m spqr_bridge.forward \
+  --socket "${SPQR_BRIDGE_SOCKET:-$dir/bridge.sock}" --token-file "$dir/$slot.token"

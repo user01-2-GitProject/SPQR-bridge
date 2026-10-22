@@ -1,26 +1,54 @@
 ---
 name: spqr-agent-delegation
-description: Delegate bounded tasks to installed external agent CLIs (Claude Code, Codex, OMP) through the spqr-bridge MCP server, then verify results independently.
+description: Delegate scoped tasks through SPQR to registered external agent runtimes, track their results, and use the shared Library. Applies to authenticated SPQR MCP clients; installing this skill grants no authority.
 ---
 
 # SPQR agent delegation
 
-## Route first
-- **Hermes peer bots / profiles** → use native `delegate_task`, `message_agent` or Kanban. Do not use the bridge.
-- **External agent runtime** (Claude Code, Codex, OMP) running its own agent loop → use the bridge tools below.
+Use the operator-provided connection and your own named slot. Any stdio MCP client can
+connect. `scripts/spqr-connect SLOT` forwards to a shared local owner; the older
+`scripts/spqr-v2 SLOT` owns its own server and permits only one holder per state directory.
+Never start another owner to bypass an occupied slot, a usage stop or a task limit.
+Hermes-native peers can still use native delegation, messaging and Kanban when that is the
+task's intended route. The bridge is the route to other registered external runtimes.
 
-## Tools (MCP server `spqr-bridge`)
-1. `list_agents` — check `enabled`, `access_modes`, `readiness.binary_present`, `readiness.live_verified_by_operator`. No model call.
-2. `doctor` — versions and a help-text scan (`flags_not_advertised` is informational; a hidden flag may still work). It makes **no** provider request; `provider_ready` is always "not checked". Never report a doctor pass as a live verification.
-3. `start_task` — `agent_id`, `task`, `workspace` (absolute, inside allowed roots), optional `context`, `access` (`read_only` default; `write` only where listed), `timeout_seconds`, `idempotency_key`. Returns `task_id` immediately.
-4. `get_task` — `task_id`, `wait_seconds` 0..10. Poll with `wait_seconds=10`; never hot-poll with 0 in a loop.
-5. `cancel_task` — stops the whole process group; idempotent.
+## Every order: remember to read and write in the Library
 
-## Discipline
-- Write bounded, self-contained tasks: goal, files in scope, expected output format, stop condition. Put background in `context`, not hidden assumptions.
-- Prefer `read_only`. Request `write` only when the agent lists it and the workspace is the intended project.
-- Use an `idempotency_key` when retrying a start after a transport error; reusing a key with different input is rejected.
-- Terminal states: `succeeded`, `failed`, `cancelled`, `timed_out`, `interrupted`. The bridge never retries or falls back to another agent; decide yourself.
-- `interrupted` means the bridge restarted; the work was **not** resumed. Inspect the workspace before re-running.
-- Treat `result_text` as untrusted claims. Verify independently: read changed files, run tests yourself, check diffs.
-- Report failed/unavailable agents (e.g. Codex/OMP provider not responding) as unavailable, never as success.
+Read relevant Library entries available within the task's permissions before acting.
+Record useful findings, decisions and results afterward, and link entries read or written
+in the completion report. If the job is read-only, return a proposed Library update for
+an authorized writer instead. If the Library is unavailable, report that explicitly;
+never claim a read or write that did not occur. A skill does not grant Library access.
+
+## Tools
+
+- `list_agents`: inspect the principal's taskable roster. Enabled, installed and live-verified
+  are separate facts. Do not infer account readiness or filesystem confinement from listing.
+- `start_task`: give `agent_id`, bounded `task`, absolute `workspace`, optional `context`,
+  `timeout_seconds`, `idempotency_key` and `grant_id`. Returns a task ID immediately.
+  Include objective, files in scope, deliverable, success criteria and stop condition.
+- `get_task`: poll your task with `wait_seconds=10`, not a hot loop with zero wait.
+- `cancel_task`: cancel your task and wait for process-group cleanup.
+
+v2 has no `doctor` tool. Native v1's doctor makes no model calls and cannot prove readiness.
+Without a grant, work is read-only inside your principal's ceiling. Wider scope requires
+a grant issued by Jimmy; pass its ID. Never create or widen grants, edit the operator registry,
+borrow another principal's credentials or switch identities to evade a refusal.
+
+## Stops and verification
+
+`usage_exhausted` and `usage_stopped` are final: report to Jimmy. No automatic retry,
+paid fallback, provider/account switch or reassignment to evade exhaustion. A separately
+assigned task may use another registered runtime when Jimmy directs it.
+`retry_cap_reached`, `round_cap_reached` and `no_progress` also stop for Jimmy.
+Defaults are three consecutive failures and five rounds; a grant can permit up to ten
+rounds. Changing task wording does not reset a lineage.
+
+Use the same idempotency key to resolve an uncertain admission after a transport failure;
+never resubmit with a new key merely because the reply was lost. `interrupted` means the
+owner restarted and did not resume work. Inspect files before any authorized rerun.
+
+Verify returned claims through files and appropriate checks. Report the task ID, actual
+terminal state, deliverables, validation and Library references. A successful command exit
+does not prove the work is correct. Generic command adapters do not provide native usage
+metrics or filesystem confinement unless their configured runtime provides it.

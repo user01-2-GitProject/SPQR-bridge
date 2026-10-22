@@ -1,0 +1,19 @@
+# Template, not an installed service. Replace absolute paths before use.
+# Keep registry, tokens, socket directory and daemon state outside worker roots.
+[Unit]
+Description=SPQR authenticated shared agent bridge (local IPC)
+
+[Service]
+Type=exec
+WorkingDirectory=/ABSOLUTE/PATH/TO/SPQR
+ExecStart=/ABSOLUTE/PATH/TO/SPQR/.venv/bin/python -m spqr_bridge.daemon --config /ABSOLUTE/PRIVATE/bridge.toml --registry /ABSOLUTE/PRIVATE/registry.toml --socket /ABSOLUTE/PRIVATE/bridge.sock --service-unit spqr-bridge.service
+UMask=0077
+KillMode=control-group
+SendSIGKILL=yes
+TimeoutStopSec=15
+# A crash leaves the socket as a recovery marker; inspect cleanup before restart.
+Restart=no
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

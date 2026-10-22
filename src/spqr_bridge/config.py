@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-ADAPTERS = ("claude", "codex", "omp")
+ADAPTERS = ("claude", "codex", "omp", "command")
 _ENV_NAME = re.compile(r"^[A-Z_][A-Z0-9_]{0,63}$")
 _AGENT_ID = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 
@@ -67,8 +67,9 @@ class ServerConfig(_Strict):
 
 
 class AgentConfig(_Strict):
-    adapter: Literal["claude", "codex", "omp"]
+    adapter: Literal["claude", "codex", "omp", "command"]
     binary: Path
+    argv: tuple[str, ...] = Field(default=(), max_length=64)
     enabled: bool = False
     allow_write: bool = False
     env_passthrough: list[str] = Field(default_factory=list)
@@ -93,10 +94,23 @@ class AgentConfig(_Strict):
                 raise ValueError(f"env_passthrough entries must be variable NAMES only: {name[:16]!r}")
         return v
 
+    @field_validator("argv")
+    @classmethod
+    def _bounded_argv(cls, v: tuple[str, ...]) -> tuple[str, ...]:
+        if any(len(arg) > 4096 or any(ord(c) < 32 or ord(c) == 127 for c in arg) for arg in v):
+            raise ValueError("argv entries must be at most 4096 characters without control characters")
+        if sum(len(arg.encode("utf-8")) for arg in v) > 16384:
+            raise ValueError("argv must be at most 16384 UTF-8 bytes")
+        return v
+
     @model_validator(mode="after")
     def _omp_no_write(self) -> "AgentConfig":
         if self.adapter == "omp" and self.allow_write:
             raise ValueError("omp has no enforced file restriction; allow_write is not supported")
+        if self.adapter == "command" and self.allow_write:
+            raise ValueError("command has no validated write restriction; allow_write is not supported")
+        if self.adapter != "command" and self.argv:
+            raise ValueError("argv is only supported for the command adapter")
         return self
 
 

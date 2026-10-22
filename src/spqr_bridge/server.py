@@ -28,6 +28,7 @@ CAPABILITIES = {
     "codex": "Codex agent loop via `codex exec --json` with native sandbox read-only or workspace-write; "
              "--ephemeral, --ignore-user-config.",
     "omp": "Oh-My-Pi agent loop via `omp -p --mode json` (best-effort output parsing).",
+    "command": "Operator-configured executable and fixed argv, task on stdin, plain-text stdout.",
 }
 LIMITATIONS = {
     "claude": ["Enforcement is Claude Code's own permission/tool system; the workspace allowlist only sets cwd "
@@ -36,6 +37,9 @@ LIMITATIONS = {
               "built-in default model.", "Live provider readiness not verified on this machine."],
     "omp": ["No enforced file restriction (read_only is prompt-level only); disabled by default.",
             "JSON output schema not verified; parsing is best-effort."],
+    "command": ["No bridge-enforced filesystem confinement; read_only is policy, not an OS sandbox.",
+                "Operator must configure native restrictions; write grants are unsupported.",
+                "Exit zero and nonempty stdout do not independently prove task completion; no structured usage metrics."],
 }
 PROVIDER_NOTE = "not checked: doctor makes no model/provider request; run the explicit live smoke"
 INSTRUCTIONS = (
@@ -137,7 +141,10 @@ def build_server(cfg: BridgeConfig) -> MCPServer:
             present = a.binary.is_file() and os.access(a.binary, os.X_OK)
             entry: dict[str, Any] = {"adapter": a.adapter, "enabled": a.enabled, "binary_found": present,
                                      "live_verified_by_operator": a.live_verified, "provider_ready": PROVIDER_NOTE}
-            if present:
+            if a.adapter == "command":
+                # Arbitrary programs can perform work even on --help/--version. Never probe them.
+                entry["probe_status"] = "not_run_for_command_adapter"
+            elif present:
                 rc, out = await _probe([str(a.binary), "--version"], 5, env)
                 entry["version"] = scrub(out.strip()[:200]) if rc == 0 else f"unavailable ({scrub(out[:120])})"
                 rc, out = await _probe([str(a.binary), *HELP_ARGV[a.adapter]], 5, env)
