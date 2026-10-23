@@ -70,6 +70,7 @@ def compose_prompt(task: str, context: str | None) -> bytes:
 
 
 OMP_SCRATCH = ("agent/sessions", "logs", "run", "cache")
+OMP_READONLY = ("config.yml", "extensions", "memories", "skill-descriptions.db")
 
 
 def omp_sandbox_argv(agent: AgentConfig, workspace: Path, access: str) -> list[str]:
@@ -82,6 +83,15 @@ def omp_sandbox_argv(agent: AgentConfig, workspace: Path, access: str) -> list[s
          "--setenv", "TMPDIR", "/tmp"]
     if omp_home.is_dir():
         a += ["--ro-bind", str(omp_home), str(omp_home)]
+        agent_dir = omp_home / "agent"
+        if agent_dir.is_dir():
+            # omp refreshes OAuth logins into agent/agent.db (SQLite, which needs its directory
+            # writable for -wal/-shm files). Its config and extensions stay read-only so a job
+            # cannot change how omp behaves outside the sandbox.
+            a += ["--bind", str(agent_dir), str(agent_dir)]
+            for ro in OMP_READONLY:
+                if (agent_dir / ro).exists():
+                    a += ["--ro-bind", str(agent_dir / ro), str(agent_dir / ro)]
         for sub in OMP_SCRATCH:
             if (omp_home / sub).is_dir():
                 a += ["--tmpfs", str(omp_home / sub)]
