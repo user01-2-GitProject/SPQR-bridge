@@ -166,7 +166,7 @@ def test_omp_sandboxed_argv():
     w = build_invocation(a, INJECT, None, WS, "write").argv
     assert w[0] == "/usr/bin/bwrap"
     assert w[w.index("--ro-bind") + 1:w.index("--ro-bind") + 3] == ["/", "/"]
-    assert w[w.index("--bind") + 1:w.index("--bind") + 3] == [".", str(WS)]
+    assert w[w.index(".") - 1:w.index(".") + 2] == ["--bind", ".", str(WS)]
     assert w[w.index("--chdir") + 1] == str(WS)
     assert ["--tmpfs", "/home/u/.config/spqr"] == w[w.index("/home/u/.config/spqr") - 1:w.index("/home/u/.config/spqr") + 1]
     omp = w[w.index("--") + 1:]
@@ -175,7 +175,7 @@ def test_omp_sandboxed_argv():
     assert "--approval-mode" in omp
     assert not any("pwned" in x for x in w)
     r = build_invocation(a, "x", None, WS, "read_only").argv
-    assert "--bind" not in r and r[r.index(".") - 1] == "--ro-bind"
+    assert r[r.index(".") - 1] == "--ro-bind"  # workspace read-only; only omp's own state dir may be --bind
     assert "--approval-mode" not in r
 
 
