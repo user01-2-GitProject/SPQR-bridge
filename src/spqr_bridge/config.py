@@ -78,6 +78,11 @@ class AgentConfig(_Strict):
     # Operator-recorded evidence that a live smoke passed; never set by the bridge itself.
     live_verified: bool = False
     description: str = ""
+    # omp only: model pattern passed as --model, and a bubblewrap sandbox that makes the
+    # filesystem read-only except the job workspace (and, for write jobs, only that).
+    model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}$")
+    sandbox: Path | None = None
+    sandbox_hide: list[Path] = Field(default_factory=list, max_length=32)
 
     @field_validator("binary")
     @classmethod
@@ -105,8 +110,14 @@ class AgentConfig(_Strict):
 
     @model_validator(mode="after")
     def _omp_no_write(self) -> "AgentConfig":
-        if self.adapter == "omp" and self.allow_write:
-            raise ValueError("omp has no enforced file restriction; allow_write is not supported")
+        if self.adapter != "omp" and (self.model or self.sandbox or self.sandbox_hide):
+            raise ValueError("model, sandbox and sandbox_hide are only supported for the omp adapter")
+        if self.sandbox is not None and not self.sandbox.is_absolute():
+            raise ValueError("sandbox must be an absolute path to bwrap")
+        if any(not h.is_absolute() for h in self.sandbox_hide):
+            raise ValueError("sandbox_hide entries must be absolute")
+        if self.adapter == "omp" and self.allow_write and self.sandbox is None:
+            raise ValueError("omp has no enforced file restriction; allow_write needs sandbox = bwrap path")
         if self.adapter == "command" and self.allow_write:
             raise ValueError("command has no validated write restriction; allow_write is not supported")
         if self.adapter != "command" and self.argv:

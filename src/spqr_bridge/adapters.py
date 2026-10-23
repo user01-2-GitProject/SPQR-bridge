@@ -69,6 +69,29 @@ def compose_prompt(task: str, context: str | None) -> bytes:
     return prompt.encode("utf-8")
 
 
+OMP_SCRATCH = ("agent/sessions", "logs", "run", "cache")
+
+
+def omp_sandbox_argv(agent: AgentConfig, workspace: Path, access: str) -> list[str]:
+    """bwrap prefix: whole filesystem read-only, private /tmp, omp's state read-only with
+    throwaway scratch dirs, hidden secret dirs, and the job workspace bound from the pinned
+    cwd (".", which the supervisor sets to /proc/self/fd/N), writable only for write jobs."""
+    omp_home = Path.home() / ".omp"
+    a = [str(agent.sandbox), "--die-with-parent", "--new-session",
+         "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
+         "--setenv", "TMPDIR", "/tmp"]
+    if omp_home.is_dir():
+        a += ["--ro-bind", str(omp_home), str(omp_home)]
+        for sub in OMP_SCRATCH:
+            if (omp_home / sub).is_dir():
+                a += ["--tmpfs", str(omp_home / sub)]
+    for h in agent.sandbox_hide:
+        a += ["--tmpfs", str(h)]
+    a += ["--bind" if access == "write" else "--ro-bind", ".", str(workspace),
+          "--chdir", str(workspace), "--"]
+    return a
+
+
 def build_invocation(agent: AgentConfig, task: str, context: str | None, workspace: Path,
                      access: str) -> Invocation:
     if access not in ("read_only", "write"):
@@ -92,9 +115,15 @@ def build_invocation(agent: AgentConfig, task: str, context: str | None, workspa
                 "--sandbox", "workspace-write" if access == "write" else "read-only",
                 "-C", str(workspace), "-"]
     elif agent.adapter == "omp":
-        if access == "write":
+        if access == "write" and agent.sandbox is None:
             raise ValueError("omp has no enforced file restriction; write is unsupported")
         argv = [b, "-p", "--mode", "json"]
+        if agent.model:
+            argv += ["--model", agent.model]
+        if access == "write":
+            argv += ["--approval-mode", "yolo"]  # the sandbox, not omp's prompts, is the boundary
+        if agent.sandbox is not None:
+            argv = omp_sandbox_argv(agent, workspace, access) + argv
     elif agent.adapter == "command":
         if access == "write":
             raise ValueError("command write access is unsupported")
