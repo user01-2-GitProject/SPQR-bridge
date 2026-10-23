@@ -117,7 +117,9 @@ def build_invocation(agent: AgentConfig, task: str, context: str | None, workspa
     elif agent.adapter == "omp":
         if access == "write" and agent.sandbox is None:
             raise ValueError("omp has no enforced file restriction; write is unsupported")
-        argv = [b, "-p", "--mode", "json"]
+        # text mode prints only the final answer; json mode streams every thinking delta and
+        # blew through max_output_bytes on long jobs.
+        argv = [b, "-p", "--mode", "text"]
         if agent.model:
             argv += ["--model", agent.model]
         if access == "write":
@@ -268,6 +270,18 @@ def _parse_omp(out: bytes) -> ParseResult:
     return ParseResult(False, "", "malformed_output: empty output")
 
 
+def _parse_omp_any(out: bytes) -> ParseResult:
+    """omp now runs in text mode (final answer only); keep reading the old JSON event stream."""
+    first = out.lstrip()[:1]
+    if first == b"{":
+        try:
+            if isinstance(json.loads(out.lstrip().split(b"\n", 1)[0]).get("type"), str):
+                return _parse_omp(out)
+        except ValueError:
+            pass
+    return _parse_text(out)
+
+
 # Phrases backends use when an account's usage window/quota is spent. Matched only on runs the
 # backend itself reported as failed, never on a successful answer. Best effort: unrecognised
 # exhaustion stays `failed`. (Unrelated to USAGE_KEYS above, which are token counts.)
@@ -288,7 +302,7 @@ def _parse_text(out: bytes) -> ParseResult:
 
 
 def parse_output(adapter: str, out: bytes, returncode: int) -> ParseResult:
-    r = {"claude": _parse_claude, "codex": _parse_codex, "omp": _parse_omp,
+    r = {"claude": _parse_claude, "codex": _parse_codex, "omp": _parse_omp_any,
          "command": _parse_text}[adapter](out)
     if returncode != 0:
         detail = r.error or "backend reported no error detail"

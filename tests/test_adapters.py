@@ -170,7 +170,7 @@ def test_omp_sandboxed_argv():
     assert w[w.index("--chdir") + 1] == str(WS)
     assert ["--tmpfs", "/home/u/.config/spqr"] == w[w.index("/home/u/.config/spqr") - 1:w.index("/home/u/.config/spqr") + 1]
     omp = w[w.index("--") + 1:]
-    assert omp[:4] == ["/opt/omp", "-p", "--mode", "json"]
+    assert omp[:4] == ["/opt/omp", "-p", "--mode", "text"]
     assert omp[omp.index("--model") + 1] == "google/gemini-flash"
     assert "--approval-mode" in omp
     assert not any("pwned" in x for x in w)
@@ -201,3 +201,9 @@ def test_omp_sandbox_blocks_writes_outside_workspace(tmp_path):
         (ws / "in.txt").unlink(missing_ok=True)
     assert not (outside / "out.txt").exists()
     assert not (Path.home() / ".spqr-escape-test").exists()
+
+
+def test_parse_omp_text_mode_returns_final_answer():
+    r = parse_output("omp", b"Created hello.txt.\n{\"result\": \"not this\"}\n", 0)
+    assert r.ok and r.text.startswith("Created hello.txt.") and "not this" in r.text
+    assert not parse_output("omp", b"", 0).ok
