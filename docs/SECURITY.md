@@ -72,8 +72,11 @@ only: Claude omits `--max-turns` from its help, yet a live invocation accepted i
 proved only by a live smoke, which `doctor` never runs (it makes zero model requests).
 
 ## Not provided
-No HTTP listener, no network exposure, no auth layer (stdio only, so the client is the trust
-boundary), no durable execution, no automatic retries or model fallback.
+No network exposure by default: the daemon serves only its private Unix socket until an
+operator configures the HTTP door (--http-bind/--http-port), which binds solely to a verified
+Tailscale address, requires a bearer credential scoped to the http transport in the registry,
+and authenticates every request before routing. No public proxy or Tailscale Funnel, no
+forwarded-header trust, no durable execution, no automatic retries or model fallback.
 **Crash containment is not provided.** Graceful shutdown cleans up every job's process group. An
 abrupt SIGKILL or crash of the bridge does not, and agent processes may keep running. The
 `interrupted` state written at the next start is bookkeeping, not proof that those processes died.

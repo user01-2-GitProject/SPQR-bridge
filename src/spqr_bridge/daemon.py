@@ -1,8 +1,11 @@
-"""Single job owner with bounded authenticated local IPC; no network listener.
+"""Single job owner with bounded authenticated local IPC and an optional HTTP door.
 
 Production starts require a verified systemd user service with control-group cleanup.
 The public SharedOwner context is also used by fake-agent tests in isolated state.
-Remote HTTP and hostile-worker confinement remain separate rollout gates.
+The HTTP door (httpdoor.py) starts only when --http-bind/--http-port are given,
+binds only to a verified Tailscale address, and stays dark until a principal's
+registry entry allows the http transport. Hostile-worker confinement remains a
+separate rollout gate.
 """
 from __future__ import annotations
 
@@ -20,7 +23,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Literal
+from typing import Iterable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -90,10 +93,16 @@ def _error(code: str, message: str) -> dict:
 
 
 class SharedOwner:
-    def __init__(self, cfg: BridgeConfig, registry: Path, socket_path: Path):
+    def __init__(self, cfg: BridgeConfig, registry: Path, socket_path: Path,
+                 http_bind: str | None = None, http_port: int | None = None,
+                 http_names: Iterable[str] = ()):
         self.cfg = prepare_config(cfg)
         self.registry = Path(registry).resolve()
         self.socket = Path(socket_path)
+        self.http_bind = http_bind
+        self.http_port = http_port
+        self.http_names = tuple(http_names)
+        self.http_server = None
         self.sup: Supervisor | None = None
         self.server = None
         self.connections: set[asyncio.Task] = set()
@@ -166,9 +175,21 @@ class SharedOwner:
             listener.close()
             await self.__aexit__(None, None, None)
             raise
+        if self.http_bind is not None:
+            try:
+                from .httpdoor import HttpDoor, local_addresses, validate_http_bind
+                bind = validate_http_bind(self.http_bind, local_addresses())
+                self.http_server = HttpDoor(self, bind, self.http_port, self.http_names)
+                await self.http_server.start()
+            except BaseException:
+                await self.__aexit__(None, None, None)
+                raise
         return self
 
     async def __aexit__(self, *_):
+        if self.http_server is not None:
+            await self.http_server.close()
+            self.http_server = None
         # Cancel connections first: on 3.12+ wait_closed() waits for every open client,
         # so one idle peer would hold shutdown past systemd's stop timeout.
         if self.server is not None:
@@ -244,12 +265,12 @@ class SharedOwner:
             if accepted:
                 self.connections.discard(task)
 
-    async def dispatch(self, request: object) -> dict:
+    async def dispatch(self, request: object, transport: str = "stdio") -> dict:
         if (not isinstance(request, dict) or set(request) - {"token", "tool", "arguments", "principal_id"}
                 or not isinstance(request.get("token"), str) or len(request["token"]) > 4096):
             return _error("invalid_request", "invalid request")
         try:
-            auth = authenticate(load_registry(self.registry), request["token"].encode(), "stdio")
+            auth = authenticate(load_registry(self.registry), request["token"].encode(), transport)
         except RegistryError:
             auth = None
         tool = request.get("tool")
@@ -287,12 +308,12 @@ class SharedOwner:
             return _error(error.code, str(error))
 
 
-async def serve(cfg, registry, socket_path):
+async def serve(cfg, registry, socket_path, http_bind=None, http_port=None, http_names=()):
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
-    async with SharedOwner(cfg, registry, socket_path):
+    async with SharedOwner(cfg, registry, socket_path, http_bind, http_port, http_names):
         await stop.wait()
 
 
@@ -302,12 +323,20 @@ def main(argv=None):
     parser.add_argument("--registry", required=True, type=Path)
     parser.add_argument("--socket", required=True, type=Path)
     parser.add_argument("--service-unit", required=True)
+    parser.add_argument("--http-bind")
+    parser.add_argument("--http-port", type=int)
+    parser.add_argument("--http-name", action="append", default=[])
     args = parser.parse_args(argv)
     try:
         if current_depth():
             raise RuntimeError("bridge-launched workers cannot start a daemon")
+        if (args.http_bind is None) != (args.http_port is None):
+            raise RuntimeError("--http-bind and --http-port must be given together")
+        if args.http_port is not None and not 1 <= args.http_port <= 65535:
+            raise RuntimeError("--http-port out of range")
         validate_service(args.service_unit)
-        asyncio.run(serve(load_config(args.config), args.registry, args.socket))
+        asyncio.run(serve(load_config(args.config), args.registry, args.socket,
+                          args.http_bind, args.http_port, tuple(args.http_name)))
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
         print("spqr-bridge-daemon: startup failed; check service identity, config and private paths", file=sys.stderr)
         raise SystemExit(2) from None
