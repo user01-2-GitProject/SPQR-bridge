@@ -55,7 +55,7 @@ def test_codex_argv_sandbox_modes():
     assert not any("danger" in x for x in ro + rw)
 
 
-def test_omp_argv_read_only_only():
+def test_omp_argv_read_only_without_sandbox():
     inv = build_invocation(agent("omp"), "x", None, WS, "read_only")
     assert inv.argv[0] == "/opt/omp"
     with pytest.raises(ValueError):
@@ -149,3 +149,55 @@ def test_parse_nonzero_exit_is_failure():
 def test_scrub_secrets():
     s = scrub("auth failed for sk-ant-abcdefghijklmnop with Bearer abcdefghijk token=supersecretvalue")
     assert "abcdefghijklmnop" not in s and "supersecretvalue" not in s and "[REDACTED]" in s
+
+
+def test_omp_write_config_needs_sandbox():
+    with pytest.raises(ValueError):
+        agent("omp", allow_write=True)
+    with pytest.raises(ValueError):
+        agent("codex", sandbox=Path("/usr/bin/bwrap"))
+    with pytest.raises(ValueError):
+        agent("omp", sandbox=Path("bwrap"))
+
+
+def test_omp_sandboxed_argv():
+    a = agent("omp", allow_write=True, sandbox=Path("/usr/bin/bwrap"), model="google/gemini-flash",
+              sandbox_hide=[Path("/home/u/.config/spqr")])
+    w = build_invocation(a, INJECT, None, WS, "write").argv
+    assert w[0] == "/usr/bin/bwrap"
+    assert w[w.index("--ro-bind") + 1:w.index("--ro-bind") + 3] == ["/", "/"]
+    assert w[w.index("--bind") + 1:w.index("--bind") + 3] == [".", str(WS)]
+    assert w[w.index("--chdir") + 1] == str(WS)
+    assert ["--tmpfs", "/home/u/.config/spqr"] == w[w.index("/home/u/.config/spqr") - 1:w.index("/home/u/.config/spqr") + 1]
+    omp = w[w.index("--") + 1:]
+    assert omp[:4] == ["/opt/omp", "-p", "--mode", "json"]
+    assert omp[omp.index("--model") + 1] == "google/gemini-flash"
+    assert "--approval-mode" in omp
+    assert not any("pwned" in x for x in w)
+    r = build_invocation(a, "x", None, WS, "read_only").argv
+    assert "--bind" not in r and r[r.index(".") - 1] == "--ro-bind"
+    assert "--approval-mode" not in r
+
+
+@pytest.mark.skipif(not Path("/usr/bin/bwrap").exists(), reason="bwrap not installed")
+def test_omp_sandbox_blocks_writes_outside_workspace(tmp_path):
+    import os, subprocess
+    from spqr_bridge.adapters import omp_sandbox_argv
+    ws, outside, secret = tmp_path / "ws", tmp_path / "outside", tmp_path / "secret"
+    ws.mkdir(); outside.mkdir(); secret.mkdir(); (secret / "tok").write_text("s")
+    a = agent("omp", allow_write=True, sandbox=Path("/usr/bin/bwrap"), sandbox_hide=[secret])
+    script = (f"echo ok > in.txt; echo x > {outside}/out.txt; echo y > $HOME/.spqr-escape-test; "
+              f"ls {secret}; true")
+    for access in ("write", "read_only"):
+        fd = os.open(ws, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            r = subprocess.run(omp_sandbox_argv(a, ws, access) + ["sh", "-c", script], capture_output=True,
+                               cwd=f"/proc/self/fd/{fd}", pass_fds=(fd,), text=True)
+        finally:
+            os.close(fd)
+        assert r.returncode == 0, r.stderr
+        assert (ws / "in.txt").exists() == (access == "write")
+        assert "tok" not in r.stdout
+        (ws / "in.txt").unlink(missing_ok=True)
+    assert not (outside / "out.txt").exists()
+    assert not (Path.home() / ".spqr-escape-test").exists()
