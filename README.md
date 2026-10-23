@@ -39,6 +39,45 @@ Task states are `queued`, `running`, `succeeded`, `failed`, `cancelled`, `timed_
 `binary_missing:`, `access_denied:`, `workspace_denied:`, `invalid_timeout:`, `queue_full:`,
 `idempotency_conflict:` and `recursion_denied:`.
 
+## HTTP door (Tailscale ingress)
+The bridge can also listen on HTTP for a remote owner over the tailnet, instead
+of only speaking MCP on stdin/stdout. The door is **off by default**.
+
+**Bind policy (fails closed).** `--http-bind` must be an address in the Tailscale
+range (`100.64.0.0/10` or `fd7a:115c:a1e0::/48`) **and** assigned to this host —
+probed from the live interfaces at startup, never assumed. `0.0.0.0`, `::`,
+loopback, LAN and public addresses are all refused.
+
+**Start the owner with the door:**
+```sh
+.venv/bin/python -m spqr_bridge.daemon --config config/bridge.local.toml \
+  --registry ~/.config/spqr/registry.toml --socket ~/.config/spqr/bridge.sock \
+  --service-unit spqr-bridge.service \
+  --http-bind 100.x.y.z --http-port 8765
+```
+`--http-bind` and `--http-port` must be given together. Optional repeatable
+`--http-name` adds allowed `Host` aliases.
+
+**Authentication.** Every request is authenticated *before* routing. The credential
+is a bearer token sent only in the `Authorization` header
+(`Authorization: Bearer <token>`), and the registry must scope that principal to
+the `http` transport (`transports = ["stdio", "http"]` in `registry.toml`).
+Tokens in the request body, duplicate `Authorization` headers, query strings and
+unexpected `Host` values are all refused. Credentials are per-principal and
+transport-scoped — iggy's credential stays stdio-only and is rejected at the
+door. Keep token files mode `0600`; tokens are never logged.
+
+**Remote forwarder.** On the far end, `httpforward.py` connects over the tailnet
+and re-serves the bridge as a local stdio MCP server:
+```sh
+.venv/bin/python -m spqr_bridge.httpforward \
+  --url http://100.x.y.z:8765 --token-file ~/.config/spqr/caesar-http.token
+```
+It authenticates first — no discovery happens until the door accepts the
+credential.
+
+Threat model and hardening details: `docs/SECURITY.md`.
+
 ## Agent status on this machine
 | Agent | Registry default | Status |
 |---|---|---|

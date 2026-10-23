@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .capabilities import CAPABILITIES, LIMITATIONS
 from .registry import AuthContext, Registry, RegistryError, load_registry, principal_valid
 from .supervisor import BridgeError, Replay, Supervisor
 
@@ -205,7 +206,6 @@ class PrincipalGate:
         return await self._audited("cancel_task", task_id, run)
 
     def list_agents(self) -> dict:
-        from .server import LIMITATIONS
         _, p = self._registry()
         agents = []
         for aid in p.agents:
@@ -215,7 +215,9 @@ class PrincipalGate:
             agents.append({"id": aid, "adapter": a.adapter, "enabled": a.enabled,
                            "access_modes": ["read_only"],  # without a grant
                            "write_possible_with_grant": a.allow_write and p.allow_write,
-                           "description": a.description, "limitations": LIMITATIONS[a.adapter]})
+                           "description": a.description,
+                           "capabilities": CAPABILITIES[a.adapter],
+                           "limitations": list(LIMITATIONS[a.adapter])})
         self._audit("list_agents", "ok")
         return {"agents": agents, "max_timeout_seconds": self.sup.s.max_timeout_seconds,
                 "note": "write and wider scope need a grant from Jimmy (pass grant_id)"}
