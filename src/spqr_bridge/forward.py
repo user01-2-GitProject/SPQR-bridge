@@ -141,12 +141,18 @@ def build_forward_server(forwarder: Forwarder) -> MCPServer:
         # before validation or handler lookup. Check again before releasing any result.
         try:
             await forwarder.check()
-            result = await call_next(ctx)
-            if ctx.request_id is not None:
-                await forwarder.check()
-            return result
         except ForwardError:
             raise MCPError(code=-32001, message="authentication required") from None
+        result = await call_next(ctx)
+        if ctx.request_id is not None:
+            try:
+                await forwarder.check()
+            except ForwardError as exc:
+                # Withhold the result only on a real credential failure. A transient error
+                # (rate limit, restart) must not hide work already admitted, e.g. a task_id.
+                if str(exc).startswith("unauthenticated"):
+                    raise MCPError(code=-32001, message="authentication required") from None
+        return result
 
     mcp = MCPServer("spqr-bridge", version=__version__, instructions=INSTRUCTIONS,
                     middleware=[authenticate_method])

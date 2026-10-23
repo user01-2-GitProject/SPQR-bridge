@@ -2,7 +2,8 @@
 # The one command every MCP client runs to take a bridge v2 slot (stdio):
 #   spqr-v2 SLOT
 # Reads $SPQR_CONFIG_DIR/SLOT.token and $SPQR_CONFIG_DIR/registry.toml (default ~/.config/spqr),
-# and $SPQR_BRIDGE_CONFIG (default config/bridge.local.toml in this repo). See docs/CLIENTS.md.
+# and $SPQR_BRIDGE_CONFIG (default config/bridge.local.toml in this repo). Forwards to the shared
+# owner when $SPQR_BRIDGE_SOCKET (default $SPQR_CONFIG_DIR/bridge.sock) exists. See docs/CLIENTS.md.
 set -eu
 slot="${1:-}"
 case "$slot" in
@@ -16,5 +17,12 @@ fi
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 [ -x "$repo/.venv/bin/python" ] || { echo "spqr-v2: no .venv in $repo: run 'uv sync' there first" >&2; exit 2; }
 dir="${SPQR_CONFIG_DIR:-${HOME:?set SPQR_CONFIG_DIR}/.config/spqr}"
+sock="${SPQR_BRIDGE_SOCKET:-$dir/bridge.sock}"
+# With the shared owner running (scripts/spqr-daemon), become its thin forwarder;
+# otherwise run the standalone server, which allows one holder at a time.
+if [ -S "$sock" ]; then
+  exec "$repo/.venv/bin/python" -m spqr_bridge.forward --socket "$sock" --token-file "$dir/$slot.token"
+fi
+echo "spqr-v2: no shared bridge at $sock; running standalone (one holder at a time)" >&2
 exec "$repo/.venv/bin/python" -m spqr_bridge.launch --token-file "$dir/$slot.token" -- \
   --config "${SPQR_BRIDGE_CONFIG:-$repo/config/bridge.local.toml}" --registry "$dir/registry.toml"

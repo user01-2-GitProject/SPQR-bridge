@@ -292,3 +292,27 @@ newline in slot name (case pattern), missing-.venv message, doc wording (registr
 allowed_roots, no symlinks, how to re-issue). Left: comma in --roots paths, non-BMP chars in
 json.dumps, pre-existing DIR mode not checked, Claude Code/Codex/OMP command syntax not verified
 on a machine with those clients.
+
+## Phase 2 local daemon cutover: independent review (Sonnet, 2026-10-22)
+
+Scope: `git diff 9d81063..HEAD` on claude/daemon (shared-owner daemon, forwarder, spqr-v2
+auto-forward, stale-socket recovery, unit installer, command adapter). Read-only reviewer.
+
+### Round 1: VERDICT: PASS (234 passed, 2 skipped)
+- [should-fix] daemon.py shutdown awaited wait_closed() before cancelling connections; one idle
+  client held shutdown ~15s (measured), past TimeoutStopSec. Fixed: cancel first.
+- [should-fix] forward.py post-check turned any error (rate_limited, restart) into an auth error,
+  hiding an admitted task_id. Fixed: only `unauthenticated` withholds a result.
+- [should-fix] stale-socket proof held only if state_dir and socket matched; an owner of another
+  state_dir unlinked a live socket. Fixed: flock on `bridge.sock.lock` before the Store.
+- [should-fix] Restart=on-failure looped forever on refused starts; example said Restart=no.
+  Fixed: RestartPreventExitStatus=2, example aligned.
+- [should-fix] spqr-v2 fell back to standalone silently. Fixed: stderr notice.
+- [nit] `$` in unit paths; dangling unit symlink. Fixed. Accepted as-is: cancel vs 15s timeout race,
+  global pre-auth rate bucket and no per-principal queue quota (same-user hostile workers deferred).
+Regression tests: tests/test_daemon_review2.py (RED commit, then fixes).
+
+### Round 2: VERDICT: PASS (241 passed, 2 skipped)
+All round-1 fixes verified. Remaining nits accepted: exit 2 is never auto-retried (operator
+restarts manually after a transient refusal); a transient pre-check error reads as
+"authentication required" (nothing admitted at that point).

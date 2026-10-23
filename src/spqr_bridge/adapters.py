@@ -166,6 +166,10 @@ def _parse_claude(out: bytes) -> ParseResult:
     subtype = o.get("subtype")
     if o.get("is_error") is not False or subtype != "success":
         detail = subtype[:64] if isinstance(subtype, str) else "is_error"
+        if subtype == "success" and text.strip():
+            # Claude reports CLI-level failures (expired login, bad flags) as subtype "success"
+            # with is_error true; the reason is only in the result text.
+            detail = text.strip().splitlines()[0][:200]
         return ParseResult(False, text, f"backend_error: {detail}", sid, usage, denials)
     if not text.strip():
         return ParseResult(False, "", "malformed_output: empty or missing result text", sid, usage, denials)
@@ -202,10 +206,29 @@ def _parse_codex(out: bytes) -> ParseResult:
     return ParseResult(True, text, None, sid, usage)
 
 
+def _omp_text(message: object) -> str:
+    if not isinstance(message, dict) or message.get("role") != "assistant":
+        return ""
+    parts = message.get("content")
+    if not isinstance(parts, list):
+        return ""
+    return "".join(p["text"] for p in parts if isinstance(p, dict) and p.get("type") == "text"
+                   and isinstance(p.get("text"), str))
+
+
 def _parse_omp(out: bytes) -> ParseResult:
-    # UNVERIFIED best effort: OMP's JSON schema was never confirmed and OMP is disabled by default.
-    # Unlike Claude/Codex this does not prove the backend completed its turn.
+    # OMP v18 event stream, observed live 2026-10-22: session, ..., message_end, turn_end, agent_end.
+    # agent_end carries the whole conversation; its last assistant message is the answer.
     objs = _json_lines(out)
+    sid = next((o["id"] for o in objs if o.get("type") == "session" and isinstance(o.get("id"), str)), None)
+    end = next((o for o in reversed(objs) if o.get("type") == "agent_end"), None)
+    if end is not None:
+        messages = end.get("messages") if isinstance(end.get("messages"), list) else []
+        text = next((t for t in (_omp_text(m) for m in reversed(messages)) if t.strip()), "")
+        if text.strip():
+            return ParseResult(True, text, None, sid, {})
+        return ParseResult(False, "", "malformed_output: agent_end without assistant text", sid, {})
+    # Older or unknown output: best effort, and it does not prove the turn completed.
     for o in reversed(objs):
         for k in ("result", "text", "content"):
             if isinstance(o.get(k), str) and o[k]:
