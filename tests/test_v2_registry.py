@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from spqr_bridge.auth import CredentialError, read_credential_fd
+from spqr_bridge.auth import CredentialError, _wipe, read_credential_fd
 from spqr_bridge.registry import RegistryError, authenticate, load_registry
 from v2_helpers import TOKENS, digest, registry_text, soon, write_registry
 
@@ -166,3 +166,29 @@ def test_credential_deadline():
         read_credential_fd(r, deadline=0.3)
     assert time.monotonic() - t0 < 2
     os.close(w)
+
+
+def test_wipe_zeroes_buffer_in_place():
+    buf = bytearray(b"super-secret-token")
+    n = len(buf)
+    _wipe(buf)
+    assert len(buf) == n            # length preserved
+    assert bytes(buf) == bytes(n)   # every byte is 0x00
+
+
+def test_wipe_handles_empty_buffer():
+    buf = bytearray()
+    _wipe(buf)  # must not raise on a zero-length buffer
+    assert bytes(buf) == b""
+
+
+def test_credential_read_returns_independent_copy():
+    # The returned token must survive in-place wiping of the internal read
+    # buffer: it has to be a genuine immutable copy, not an alias into the
+    # bytearray that read_credential_fd zeroes on exit.
+    r, w = os.pipe()
+    os.write(w, TOKENS["caesar"].encode() + b"\n")
+    os.close(w)
+    token = read_credential_fd(r)
+    assert token == TOKENS["caesar"].encode()
+    assert isinstance(token, bytes)
