@@ -7,8 +7,6 @@ The runner publishes the terminal state, then releases the concurrency slot and 
 lease, only after the process group has been killed and reaped (see `procs.run_group`).
 """
 
-from __future__ import annotations
-
 import asyncio
 import collections
 import hashlib

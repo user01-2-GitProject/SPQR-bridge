@@ -1,7 +1,5 @@
 """Trusted operator registry: TOML loaded once at server startup and validated strictly."""
 
-from __future__ import annotations
-
 import re
 import tomllib
 from pathlib import Path
