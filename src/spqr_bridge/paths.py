@@ -12,6 +12,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+_PROC_FD_PREFIX = "/proc/self/fd/"
+
 
 class PathPolicyError(ValueError):
     pass
@@ -56,7 +58,7 @@ class PinnedDir:
 
     @property
     def launch_cwd(self) -> str:
-        return f"/proc/self/fd/{self.fd}"
+        return f"{_PROC_FD_PREFIX}{self.fd}"
 
     def close(self) -> None:
         if self.fd >= 0:
@@ -67,7 +69,7 @@ class PinnedDir:
 def check_pinned(pinned: PinnedDir, allowed_roots: list[Path], exclude: list[Path] = ()) -> None:
     """Reject if the pinned object moved, or if the admitted path now names a different object."""
     try:
-        actual = Path(os.readlink(f"/proc/self/fd/{pinned.fd}"))
+        actual = Path(os.readlink(f"{_PROC_FD_PREFIX}{pinned.fd}"))
         st = os.stat(pinned.path)
     except OSError:
         raise PathPolicyError("workspace_changed: admitted directory is gone") from None
