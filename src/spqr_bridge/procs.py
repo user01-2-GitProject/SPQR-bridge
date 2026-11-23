@@ -7,8 +7,6 @@ connecting pipes is never orphaned), the process group gets SIGTERM then SIGKILL
 reaped, and only then does the call return (or re-raise CancelledError).
 """
 
-from __future__ import annotations
-
 import asyncio
 import os
 import signal

@@ -4,8 +4,6 @@ Callers never supply argv, env, model or provider. The prompt always travels on 
 so task text beginning with "-" or "@" is never interpreted as a flag or file reference.
 """
 
-from __future__ import annotations
-
 import json
 import math
 from dataclasses import dataclass, field

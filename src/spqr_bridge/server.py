@@ -1,9 +1,6 @@
 """stdio MCP facade: list_agents, start_task, get_task, cancel_task, doctor."""
 
-from __future__ import annotations
-
 import argparse
-import asyncio
 import os
 import sys
 from contextlib import asynccontextmanager

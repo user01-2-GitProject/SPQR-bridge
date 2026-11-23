@@ -4,8 +4,6 @@ Records persist across restarts; execution does not. On startup any queued/runni
 left by a previous process is marked `interrupted` and never resumed.
 """
 
-from __future__ import annotations
-
 import fcntl
 import os
 import sqlite3

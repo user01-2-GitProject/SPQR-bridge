@@ -8,8 +8,6 @@ same-user process from moving the directory itself (or an ancestor) out of the a
 launch; enforcement of what the agent may touch remains the backend CLI's own.
 """
 
-from __future__ import annotations
-
 import os
 from dataclasses import dataclass
 from pathlib import Path
